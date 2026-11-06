@@ -1,3 +1,14 @@
+> 最新安装包：[1.2.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.2.0) · [全部版本](https://github.com/UltraDATY/ts3-channel-tts/releases)
+>
+> 历史版本已按本地源码归档分别导入提交和标签；各 Release 保留当时的原始安装包、源码包及 SHA-256 校验文件。
+
+| 版本 | 内容 |
+| --- | --- |
+| [1.2.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.2.0) | 违禁词过滤开关和可编辑词库 |
+| [1.1.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.1.0) | 顶部插件菜单设置 |
+| [1.0.1](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.0.1) | 中文名称和操作提示 |
+| [1.0.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.0.0) | 初始频道朗读功能 |
+
 # 频道文字朗读 (Channel TTS) 1.2.0
 
 Windows x64 原生 C++17 插件，使用 Windows SAPI 5 的默认语音在本机播放。无需云服务、密钥、Qt 或额外 TTS 运行时。提供的 DLL 已在本机 MSVC x64 编译；未在真实 TS3 客户端中联调，请按文末步骤验收。
@@ -119,6 +130,8 @@ cmake --build build-vs --config Release
 - TTS 标志：[Microsoft SPEAKFLAGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717252(v=vs.85))
 
 本项目自行编写的 `src/plugin.cpp`、`CMakeLists.txt`、`build.cmd` 和说明文档采用 MIT 许可，见 LICENSE。
+
+
 
 
 
