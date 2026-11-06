@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ChannelTTS VERSION 1.1.0 LANGUAGES CXX)
+project(ChannelTTS VERSION 1.2.0 LANGUAGES CXX)
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "This plugin requires Windows x64")
 endif()
@@ -14,5 +14,6 @@ if(MSVC)
   set_property(TARGET channel_tts PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 install(TARGETS channel_tts RUNTIME DESTINATION plugins)
+
 
 

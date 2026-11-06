@@ -6,6 +6,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <future>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+#include "word_filter.h"
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -18,12 +22,13 @@ TS3Functions ts{};
 std::mutex mu;
 std::condition_variable cv;
 std::thread worker;
-struct Settings { bool enabled=true, self=false, names=true; int rate=0, volume=80; } cfg;
+struct Settings { bool enabled=true, self=false, names=true, filter=false; int rate=0, volume=80; } cfg;
 struct Job { std::wstring text; Settings settings; unsigned long long generation; };
 std::deque<Job> queue;
 bool quitting=false;
 unsigned long long generation=0;
-std::wstring ini;
+std::wstring ini, wordPath;
+std::vector<std::wstring> blockedWords;
 std::string pluginID;
 std::wstring wide(const char* s) {
     if(!s) return {};
@@ -33,17 +38,62 @@ std::wstring wide(const char* s) {
     MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s,-1,out.data(),n);
     out.pop_back(); return out;
 }
+void loadWordsLocked() {
+    std::ifstream file(std::filesystem::path(wordPath),std::ios::binary|std::ios::ate);
+    if(!file || file.tellg()<0 || file.tellg()>1024*1024) {
+        ts.logMessage("无法读取违禁词库（文件需小于 1MB），保留原词库。",LogLevel_WARNING,"Channel TTS",0); return;
+    }
+    const auto size=static_cast<size_t>(file.tellg()); file.seekg(0);
+    std::string content(size,'\0');
+    if(size && !file.read(content.data(),static_cast<std::streamsize>(size))) return;
+    if(content.compare(0,3,"\xEF\xBB\xBF")==0) content.erase(0,3);
+    if(content.find('\0')!=std::string::npos || (!content.empty() && wide(content.c_str()).empty())) {
+        ts.logMessage("违禁词库不是有效 UTF-8 文本，保留原词库。",LogLevel_WARNING,"Channel TTS",0);return;
+    }
+    std::vector<std::wstring> words;
+    std::istringstream lines(content); std::string line;
+    while(std::getline(lines,line)) {
+        auto word=wide(line.c_str());
+        const auto first=word.find_first_not_of(L" \t\r");
+        if(first==std::wstring::npos || word[first]==L'#') continue;
+        word=word.substr(first,word.find_last_not_of(L" \t\r")-first+1);
+        if(word.size()>128 || words.size()>=1000) {
+            ts.logMessage("词库超出限制（最多 1000 个词，每词 128 个 UTF-16 单元），保留原词库。",LogLevel_WARNING,"Channel TTS",0);return;
+        }
+        words.push_back(std::move(word));
+    }
+    blockedWords=std::move(words);
+}
+void createWordsFile() {
+    HANDLE file=CreateFileW(wordPath.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(file==INVALID_HANDLE_VALUE) return; // Never overwrite the user's dictionary.
+    const char initial[]="\xEF\xBB\xBF# 违禁词库：UTF-8 编码，每行一个词；# 开头为注释。\r\n# 命中正文或正在朗读的昵称时跳过整条语音；英文不区分大小写。\r\n# 修改保存后，点击插件菜单中的“重新加载违禁词库”。\r\n傻逼\r\n操你妈\r\nfuck\r\n";
+    DWORD written=0; WriteFile(file,initial,sizeof(initial)-1,&written,nullptr); CloseHandle(file);
+}
+void editWords() {
+    wchar_t system[MAX_PATH]{};
+    const UINT n=GetSystemDirectoryW(system,MAX_PATH);
+    if(!n || n>=MAX_PATH) return;
+    const std::wstring exe=std::wstring(system)+L"\\notepad.exe";
+    std::wstring command=L"\""+exe+L"\" \""+wordPath+L"\"";
+    STARTUPINFOW startup{}; startup.cb=sizeof(startup); PROCESS_INFORMATION process{};
+    if(CreateProcessW(exe.c_str(),command.data(),nullptr,nullptr,FALSE,0,nullptr,nullptr,&startup,&process)) {
+        CloseHandle(process.hThread);CloseHandle(process.hProcess);
+    } else ts.logMessage("无法打开记事本，请手动编辑 channel_tts_blocked_words.txt。",LogLevel_WARNING,"Channel TTS",0);
+}
 void clearLocked() { queue.clear(); ++generation; cv.notify_all(); }
 void saveLocked() {
     auto put=[](const wchar_t* k,int v){ auto s=std::to_wstring(v); return WritePrivateProfileStringW(L"tts",k,s.c_str(),ini.c_str()); };
     bool ok=put(L"enabled",cfg.enabled)!=0;
     ok=(put(L"self",cfg.self)!=0)&&ok; ok=(put(L"names",cfg.names)!=0)&&ok;
+    ok=(put(L"filter",cfg.filter)!=0)&&ok;
     ok=(put(L"rate",cfg.rate)!=0)&&ok; ok=(put(L"volume",cfg.volume)!=0)&&ok;
     if(!ok) ts.logMessage("无法保存 channel_tts.ini 配置文件",LogLevel_WARNING,"Channel TTS",0);
 }
 void loadLocked() {
     auto get=[](const wchar_t* k,int d){ return static_cast<int>(GetPrivateProfileIntW(L"tts",k,d,ini.c_str())); };
     cfg.enabled=get(L"enabled",1)!=0; cfg.self=get(L"self",0)!=0; cfg.names=get(L"names",1)!=0;
+    cfg.filter=get(L"filter",0)!=0;
     cfg.rate=std::clamp(get(L"rate",0),-10,10); cfg.volume=std::clamp(get(L"volume",80),0,100);
 }
 void speech(std::promise<HRESULT> ready) {
@@ -83,7 +133,7 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.1.0";}
+API const char* ts3plugin_version(){return "1.2.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
 API const char* ts3plugin_description(){return "使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。";}
@@ -93,8 +143,9 @@ API int ts3plugin_init(){
         char path[32768]{}; ts.getConfigPath(path,sizeof(path)); ini=wide(path);
         if(ini.empty()) return 1;
         if(ini.back()!=L'\\' && ini.back()!=L'/') ini+=L'\\';
-        ini+=L"channel_tts.ini";
-        {std::lock_guard<std::mutex> l(mu); quitting=false; clearLocked(); loadLocked();}
+        wordPath=ini+L"channel_tts_blocked_words.txt";
+        ini+=L"channel_tts.ini"; createWordsFile();
+        {std::lock_guard<std::mutex> l(mu); quitting=false; clearLocked(); loadLocked(); loadWordsLocked();}
         std::promise<HRESULT> p; auto result=p.get_future(); worker=std::thread(speech,std::move(p));
         HRESULT hr=result.get();
         if(FAILED(hr)){worker.join(); ts.logMessage("无法初始化 Windows SAPI 语音，请检查是否安装兼容语音。",LogLevel_ERROR,"Channel TTS",0);return 1;}
@@ -111,7 +162,7 @@ API int ts3plugin_processCommand(uint64 s,const char* command){
     try {
         std::istringstream in(command?command:""); std::string cmd,arg,extra; in>>cmd>>arg>>extra;
         std::lock_guard<std::mutex> l(mu);
-        if(cmd=="status") {reply(s,std::string("频道文字朗读：")+(cfg.enabled?"已开启":"已关闭")+"；朗读自己："+(cfg.self?"是":"否")+"；朗读昵称："+(cfg.names?"是":"否")+"；语速："+std::to_string(cfg.rate)+"；音量："+std::to_string(cfg.volume));return 0;}
+        if(cmd=="status") {reply(s,std::string("频道文字朗读：")+(cfg.enabled?"已开启":"已关闭")+"；朗读自己："+(cfg.self?"是":"否")+"；朗读昵称："+(cfg.names?"是":"否")+"；语速："+std::to_string(cfg.rate)+"；音量："+std::to_string(cfg.volume)+"；违禁词过滤："+(cfg.filter?"已开启":"已关闭")+"；词库数量："+std::to_string(blockedWords.size()));return 0;}
         if(cmd=="stop"){clearLocked();reply(s,"已停止朗读并清空队列，后续消息仍可朗读。");return 0;}
         if(cmd=="reload"){loadLocked();clearLocked();reply(s,"已重新读取配置并清空朗读队列。");return 0;}
         if((cmd=="on"||cmd=="off") && arg.empty()) cfg.enabled=cmd=="on";
@@ -132,6 +183,7 @@ API int ts3plugin_onTextMessageEvent(uint64 s,anyID mode,anyID /*to*/,anyID from
         std::lock_guard<std::mutex> l(mu);
         if(quitting||!cfg.enabled||(!cfg.self && me==from))return 0;
         auto text=wide(message); if(text.empty())return 0;
+        if(cfg.filter && (word_filter::matches(text,blockedWords) || (cfg.names && word_filter::matches(wide(name),blockedWords))))return 0;
         // Limit UTF-16 length without leaving a dangling high surrogate.
         if(text.size()>500) {text.resize(500);if(text.back()>=0xD800 && text.back()<=0xDBFF)text.pop_back();}
         if(cfg.names){auto n=wide(name);if(n.size()>80)n.resize(80);text=n+L": "+text;}
@@ -161,7 +213,8 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
         "朗读自己的消息：开启 / 关闭", "朗读发送者昵称：开启 / 关闭",
         "语速加快（+1）", "语速减慢（-1）",
         "音量增加（+10）", "音量减小（-10）",
-        "查看当前设置", "重新读取配置文件", "恢复默认设置"
+        "查看当前设置", "重新读取配置文件", "恢复默认设置",
+        "违禁词过滤：开启 / 关闭", "编辑违禁词库…", "重新加载违禁词库"
     };
     constexpr size_t count=sizeof(labels)/sizeof(labels[0]);
     auto list=static_cast<PluginMenuItem**>(std::calloc(count+1,sizeof(PluginMenuItem*)));
@@ -179,7 +232,8 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
     *items=list;
 }
 API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
-    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>12) return;
+    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>15) return;
+    if(id==14) { editWords(); return; }
     // The menu requires no chat commands. Status is displayed locally after changes.
     try {
         {
@@ -198,8 +252,10 @@ API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
                 case 10: break;
                 case 11: loadLocked(); clearLocked(); break;
                 case 12: cfg=Settings{}; break;
+                case 13: cfg.filter=!cfg.filter; break;
+                case 15: loadWordsLocked(); clearLocked(); break;
             }
-            if(id!=3 && id!=10 && id!=11) { clearLocked(); saveLocked(); }
+            if(id!=3 && id!=10 && id!=11 && id!=15) { clearLocked(); saveLocked(); }
         }
         if(id==3) reply(s,"已停止朗读并清空队列。");
         ts3plugin_processCommand(s,"status");
@@ -207,3 +263,4 @@ API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
         reply(s,"频道文字朗读：无法应用菜单设置，请查看客户端日志。");
     }
 }
+
