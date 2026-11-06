@@ -1,6 +1,10 @@
-# Channel TTS — TeamSpeak 3 频道文字朗读
+# 频道文字朗读 (Channel TTS) 1.0.1
 
 Windows x64 原生 C++17 插件，使用 Windows SAPI 5 的默认语音在本机播放。无需云服务、密钥、Qt 或额外 TTS 运行时。提供的 DLL 已在本机 MSVC x64 编译；未在真实 TS3 客户端中联调，请按文末步骤验收。
+
+## 中文版更新
+
+插件名称、简介、命令帮助、状态和操作提示已中文化。命令关键词仍使用 /tts。安装包为 ChannelTTS-1.0.1-zh-CN-win64.ts3_plugin，可双击安装后重启客户端。界面中文化不会自动安装中文语音。
 
 ## 安装
 
@@ -95,3 +99,4 @@ cmake --build build-vs --config Release
 - TTS 标志：[Microsoft SPEAKFLAGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717252(v=vs.85))
 
 本项目自行编写的 `src/plugin.cpp`、`CMakeLists.txt`、`build.cmd` 和说明文档采用 MIT 许可，见 LICENSE。
+
