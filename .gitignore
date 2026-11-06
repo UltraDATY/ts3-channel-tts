@@ -1,0 +1,9 @@
+/build/
+/build-*/
+*.dll
+*.obj
+*.lib
+*.exp
+*.exe
+*.log
+*.ts3_plugin
