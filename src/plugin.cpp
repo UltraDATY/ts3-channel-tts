@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <condition_variable>
 #include <deque>
+#include <cstdlib>
+#include <cstring>
 #include <future>
 #include <mutex>
 #include <sstream>
@@ -22,6 +24,7 @@ std::deque<Job> queue;
 bool quitting=false;
 unsigned long long generation=0;
 std::wstring ini;
+std::string pluginID;
 std::wstring wide(const char* s) {
     if(!s) return {};
     int n=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s,-1,nullptr,0);
@@ -80,10 +83,10 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.0.1";}
+API const char* ts3plugin_version(){return "1.1.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
-API const char* ts3plugin_description(){return "使用 Windows 系统语音朗读当前频道文字。输入 /tts help 查看中文帮助。";}
+API const char* ts3plugin_description(){return "使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。";}
 API void ts3plugin_setFunctionPointers(const TS3Functions funcs){ts=funcs;}
 API int ts3plugin_init(){
     try {
@@ -101,6 +104,7 @@ API int ts3plugin_init(){
 API void ts3plugin_shutdown(){
     {std::lock_guard<std::mutex> l(mu); quitting=true; clearLocked();}
     if(worker.joinable()) worker.join();
+    pluginID.clear();
 }
 API const char* ts3plugin_commandKeyword(){return "tts";}
 API int ts3plugin_processCommand(uint64 s,const char* command){
@@ -143,3 +147,63 @@ API void ts3plugin_onClientMoveMovedEvent(uint64 s,anyID c,uint64,uint64,int,any
 API void ts3plugin_onClientKickFromChannelEvent(uint64 s,anyID c,uint64,uint64,int,anyID,const char*,const char*,const char*){moved(s,c);}
 API void ts3plugin_onClientKickFromServerEvent(uint64 s,anyID c,uint64,uint64,int,anyID,const char*,const char*,const char*){moved(s,c);}
 
+
+
+// Global menu entries are displayed by TS3 under this plugin's submenu.
+API void ts3plugin_registerPluginID(const char* id) {
+    try { pluginID=id?id:""; } catch(...) { pluginID.clear(); }
+}
+API void ts3plugin_freeMemory(void* data) { std::free(data); }
+API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
+    *items=nullptr; *icon=nullptr;
+    const char* labels[]={
+        "开启朗读", "关闭朗读", "停止当前朗读并清空队列",
+        "朗读自己的消息：开启 / 关闭", "朗读发送者昵称：开启 / 关闭",
+        "语速加快（+1）", "语速减慢（-1）",
+        "音量增加（+10）", "音量减小（-10）",
+        "查看当前设置", "重新读取配置文件", "恢复默认设置"
+    };
+    constexpr size_t count=sizeof(labels)/sizeof(labels[0]);
+    auto list=static_cast<PluginMenuItem**>(std::calloc(count+1,sizeof(PluginMenuItem*)));
+    if(!list) return;
+    for(size_t i=0;i<count;++i) {
+        list[i]=static_cast<PluginMenuItem*>(std::calloc(1,sizeof(PluginMenuItem)));
+        if(!list[i]) {
+            for(size_t j=0;j<i;++j) std::free(list[j]);
+            std::free(list); return;
+        }
+        list[i]->type=PLUGIN_MENU_TYPE_GLOBAL;
+        list[i]->id=static_cast<int>(i)+1;
+        strcpy_s(list[i]->text,PLUGIN_MENU_BUFSZ,labels[i]);
+    }
+    *items=list;
+}
+API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
+    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>12) return;
+    // The menu requires no chat commands. Status is displayed locally after changes.
+    try {
+        {
+            std::lock_guard<std::mutex> l(mu);
+            if(quitting) return;
+            switch(id) {
+                case 1: cfg.enabled=true; break;
+                case 2: cfg.enabled=false; break;
+                case 3: clearLocked(); break;
+                case 4: cfg.self=!cfg.self; break;
+                case 5: cfg.names=!cfg.names; break;
+                case 6: cfg.rate=std::min(10,cfg.rate+1); break;
+                case 7: cfg.rate=std::max(-10,cfg.rate-1); break;
+                case 8: cfg.volume=std::min(100,cfg.volume+10); break;
+                case 9: cfg.volume=std::max(0,cfg.volume-10); break;
+                case 10: break;
+                case 11: loadLocked(); clearLocked(); break;
+                case 12: cfg=Settings{}; break;
+            }
+            if(id!=3 && id!=10 && id!=11) { clearLocked(); saveLocked(); }
+        }
+        if(id==3) reply(s,"已停止朗读并清空队列。");
+        ts3plugin_processCommand(s,"status");
+    } catch(...) {
+        reply(s,"频道文字朗读：无法应用菜单设置，请查看客户端日志。");
+    }
+}
