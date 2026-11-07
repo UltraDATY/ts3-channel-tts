@@ -1,21 +1,24 @@
-> 最新安装包：[1.2.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.2.0) · [全部版本](https://github.com/UltraDATY/ts3-channel-tts/releases)
->
-> 历史版本已按本地源码归档分别导入提交和标签；各 Release 保留当时的原始安装包、源码包及 SHA-256 校验文件。
+## 1.3.0：不朗读指定用户（音乐机器人）
 
-| 版本 | 内容 |
-| --- | --- |
-| [1.2.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.2.0) | 违禁词过滤开关和可编辑词库 |
-| [1.1.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.1.0) | 顶部插件菜单设置 |
-| [1.0.1](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.0.1) | 中文名称和操作提示 |
-| [1.0.0](https://github.com/UltraDATY/ts3-channel-tts/releases/tag/v1.0.0) | 初始频道朗读功能 |
+在频道树里右键音乐机器人或任意用户，进入“频道文字朗读”子菜单：
 
-# 频道文字朗读 (Channel TTS) 1.2.0
+- **不朗读此用户的文字消息**：加入名单，立即停止当前朗读并清空等待队列。
+- **恢复朗读此用户的文字消息**：移出名单。
+- **查看此用户的朗读状态**：检查是否在名单中。
+
+顶部“插件 → 频道文字朗读 → 查看不朗读名单”显示名单数量与用户唯一身份 UID。名单保存在 `channel_tts.ini` 的 `[ignored_users]` 段，不覆盖旧配置或违禁词库。插件重载、TS3 重启后自动恢复；“重新读取配置文件”也会刷新名单。“恢复默认设置”保留此名单。最多 256 人，保存失败会撤回本次修改并提示。
+
+名单按 TS3 的用户唯一身份 UID 精确匹配，不依赖容易变化的昵称或会话 clientID，因此重连、改名后仍生效，同名但不同身份的用户不受影响。名单跨服务器连接生效。机器人更换身份后需要重新加入。不自动识别机器人，需要手动选中目标。只跳过其文字朗读，不屏蔽频道文字、不静音机器人播放的音乐。该功能不依赖违禁词过滤开关。已在队列中的旧消息在名单变更时全部清除，避免继续朗读。
+
+实现使用 SDK 的 CLIENT_UNIQUE_IDENTIFIER 与文字回调的 fromUniqueIdentifier。新增自动测试验证：加入/移出、重连/改名、同名不同 UID、保存和重新加载、空名单、重复添加、数量上限、查询失败、保存失败回退及队列取消。通过本机 MSVC x64 编译、原有过滤测试和 DLL 加载/菜单测试；尚未在真实 TS3 中验证右键菜单。
+
+# 频道文字朗读 (Channel TTS) 1.3.0
 
 Windows x64 原生 C++17 插件，使用 Windows SAPI 5 的默认语音在本机播放。无需云服务、密钥、Qt 或额外 TTS 运行时。提供的 DLL 已在本机 MSVC x64 编译；未在真实 TS3 客户端中联调，请按文末步骤验收。
 
 ## 中文版更新
 
-插件名称、简介、命令帮助、状态和操作提示已中文化。命令关键词仍使用 /tts。安装包为 ChannelTTS-1.2.0-zh-CN-win64.ts3_plugin，可双击安装后重启客户端。1.2.0 新增顶部“插件”菜单设置，所有选项均可鼠标操作；原命令作为可选快捷方式保留。界面中文化不会自动安装中文语音。
+插件名称、简介、命令帮助、状态和操作提示已中文化。命令关键词仍使用 /tts。安装包为 ChannelTTS-1.3.0-zh-CN-win64.ts3_plugin，可双击安装后重启客户端。1.3.0 新增顶部“插件”菜单设置，所有选项均可鼠标操作；原命令作为可选快捷方式保留。界面中文化不会自动安装中文语音。
 
 ## 安装
 
@@ -27,7 +30,7 @@ Windows x64 原生 C++17 插件，使用 Windows SAPI 5 的默认语音在本机
 
 语音走 Windows 默认音频输出，不自动跟随 TS3 的播放设备，也不会注入麦克风或广播给频道。中文发音取决于安装的 **64 位 SAPI 兼容语音**；Windows 设置中显示的部分 OneCore/自然语音不一定向桌面 SAPI 暴露。本版本使用 SAPI 默认语音，不提供语音枚举或声音选择。无声时先检查 `/tts on`、`/tts volume 80`、Windows 音量混合器和默认输出设备；初始化失败请查看 TS3 客户端日志。
 
-## 违禁词过滤（1.2.0 新增）
+## 违禁词过滤（1.3.0 新增）
 
 顶部“插件 → 频道文字朗读”新增：
 
@@ -45,7 +48,7 @@ Windows x64 原生 C++17 插件，使用 Windows SAPI 5 的默认语音在本机
 
 ## 菜单设置（推荐）
 
-安装 1.2.0 后重启 TS3，点击顶部“插件”→“频道文字朗读 (Channel TTS)”。可以直接通过菜单完成全部设置，不需要输入 /tts help。语速每次调整 1，音量每次调整 10，设置自动保存；当前值在本地提示中显示。该菜单使用 SDK 的 PLUGIN_MENU_TYPE_GLOBAL、ts3plugin_initMenus 与 ts3plugin_onMenuItemEvent 实现，见官方 SDK 示例。已通过测试宿主验证，真实 TS3 菜单显示仍待验证。
+安装 1.3.0 后重启 TS3，点击顶部“插件”→“频道文字朗读 (Channel TTS)”。可以直接通过菜单完成全部设置，不需要输入 /tts help。语速每次调整 1，音量每次调整 10，设置自动保存；当前值在本地提示中显示。该菜单使用 SDK 的 PLUGIN_MENU_TYPE_GLOBAL、ts3plugin_initMenus 与 ts3plugin_onMenuItemEvent 实现，见官方 SDK 示例。已通过测试宿主验证，真实 TS3 菜单显示仍待验证。
 
 ## 命令与配置（可选）
 
@@ -130,7 +133,6 @@ cmake --build build-vs --config Release
 - TTS 标志：[Microsoft SPEAKFLAGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717252(v=vs.85))
 
 本项目自行编写的 `src/plugin.cpp`、`CMakeLists.txt`、`build.cmd` 和说明文档采用 MIT 许可，见 LICENSE。
-
 
 
 

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <vector>
+#include <set>
 #include "word_filter.h"
 #include <mutex>
 #include <sstream>
@@ -30,6 +31,7 @@ unsigned long long generation=0;
 std::wstring ini, wordPath;
 std::vector<std::wstring> blockedWords;
 std::string pluginID;
+std::set<std::string> ignoredUsers;
 std::wstring wide(const char* s) {
     if(!s) return {};
     int n=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s,-1,nullptr,0);
@@ -96,6 +98,35 @@ void loadLocked() {
     cfg.filter=get(L"filter",0)!=0;
     cfg.rate=std::clamp(get(L"rate",0),-10,10); cfg.volume=std::clamp(get(L"volume",80),0,100);
 }
+
+std::string utf8(const wchar_t* value) {
+    int n=WideCharToMultiByte(CP_UTF8,0,value,-1,nullptr,0,nullptr,nullptr);
+    if(n<=1) return {};
+    std::string text(n,'\0'); WideCharToMultiByte(CP_UTF8,0,value,-1,text.data(),n,nullptr,nullptr);
+    text.pop_back();return text;
+}
+bool validUID(const std::string& uid) {
+    return !uid.empty() && uid.size()<=128 && uid.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")==std::string::npos;
+}
+void loadIgnoredLocked() {
+    std::vector<wchar_t> buffer(65536);
+    DWORD n=GetPrivateProfileSectionW(L"ignored_users",buffer.data(),static_cast<DWORD>(buffer.size()),ini.c_str());
+    if(n>=buffer.size()-2) return;
+    std::set<std::string> next;
+    for(const wchar_t* row=buffer.data();*row;row+=wcslen(row)+1) {
+        const wchar_t* equals=wcschr(row,L'=');if(!equals)continue;
+        auto uid=utf8(equals+1);if(validUID(uid) && next.size()<256)next.insert(uid);
+    }
+    ignoredUsers=std::move(next);
+}
+bool saveIgnoredLocked() {
+    std::wstring section;size_t i=0;
+    for(const auto& uid:ignoredUsers) {
+        section+=L"user"+std::to_wstring(i++)+L"="+wide(uid.c_str());section.push_back(L'\0');
+    }
+    section.push_back(L'\0');section.push_back(L'\0');
+    return WritePrivateProfileSectionW(L"ignored_users",section.c_str(),ini.c_str())!=0;
+}
 void speech(std::promise<HRESULT> ready) {
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     if(FAILED(hr)) { ready.set_value(hr); return; }
@@ -133,7 +164,7 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.2.0";}
+API const char* ts3plugin_version(){return "1.3.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
 API const char* ts3plugin_description(){return "使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。";}
@@ -145,7 +176,7 @@ API int ts3plugin_init(){
         if(ini.back()!=L'\\' && ini.back()!=L'/') ini+=L'\\';
         wordPath=ini+L"channel_tts_blocked_words.txt";
         ini+=L"channel_tts.ini"; createWordsFile();
-        {std::lock_guard<std::mutex> l(mu); quitting=false; clearLocked(); loadLocked(); loadWordsLocked();}
+        {std::lock_guard<std::mutex> l(mu); quitting=false; clearLocked(); loadLocked(); loadWordsLocked(); loadIgnoredLocked();}
         std::promise<HRESULT> p; auto result=p.get_future(); worker=std::thread(speech,std::move(p));
         HRESULT hr=result.get();
         if(FAILED(hr)){worker.join(); ts.logMessage("无法初始化 Windows SAPI 语音，请检查是否安装兼容语音。",LogLevel_ERROR,"Channel TTS",0);return 1;}
@@ -162,9 +193,9 @@ API int ts3plugin_processCommand(uint64 s,const char* command){
     try {
         std::istringstream in(command?command:""); std::string cmd,arg,extra; in>>cmd>>arg>>extra;
         std::lock_guard<std::mutex> l(mu);
-        if(cmd=="status") {reply(s,std::string("频道文字朗读：")+(cfg.enabled?"已开启":"已关闭")+"；朗读自己："+(cfg.self?"是":"否")+"；朗读昵称："+(cfg.names?"是":"否")+"；语速："+std::to_string(cfg.rate)+"；音量："+std::to_string(cfg.volume)+"；违禁词过滤："+(cfg.filter?"已开启":"已关闭")+"；词库数量："+std::to_string(blockedWords.size()));return 0;}
+        if(cmd=="status") {reply(s,std::string("频道文字朗读：")+(cfg.enabled?"已开启":"已关闭")+"；朗读自己："+(cfg.self?"是":"否")+"；朗读昵称："+(cfg.names?"是":"否")+"；语速："+std::to_string(cfg.rate)+"；音量："+std::to_string(cfg.volume)+"；违禁词过滤："+(cfg.filter?"已开启":"已关闭")+"；词库数量："+std::to_string(blockedWords.size())+"；不朗读用户："+std::to_string(ignoredUsers.size()));return 0;}
         if(cmd=="stop"){clearLocked();reply(s,"已停止朗读并清空队列，后续消息仍可朗读。");return 0;}
-        if(cmd=="reload"){loadLocked();clearLocked();reply(s,"已重新读取配置并清空朗读队列。");return 0;}
+        if(cmd=="reload"){loadLocked();loadIgnoredLocked();clearLocked();reply(s,"已重新读取配置并清空朗读队列。");return 0;}
         if((cmd=="on"||cmd=="off") && arg.empty()) cfg.enabled=cmd=="on";
         else if((cmd=="self"||cmd=="names") && (arg=="on"||arg=="off") && extra.empty()) {if(cmd=="self")cfg.self=arg=="on";else cfg.names=arg=="on";}
         else if((cmd=="rate"||cmd=="volume") && !arg.empty() && extra.empty()) {
@@ -176,12 +207,13 @@ API int ts3plugin_processCommand(uint64 s,const char* command){
     }catch(...){reply(s,"频道文字朗读：命令参数无效或发生内部错误，输入 /tts help 查看帮助。");}
     return 0;
 }
-API int ts3plugin_onTextMessageEvent(uint64 s,anyID mode,anyID /*to*/,anyID from,const char* name,const char*,const char* message,int ignored){
+API int ts3plugin_onTextMessageEvent(uint64 s,anyID mode,anyID /*to*/,anyID from,const char* name,const char* fromUID,const char* message,int ignored){
     try {
         if(ignored || mode!=TextMessageTarget_CHANNEL || s!=ts.getCurrentServerConnectionHandlerID())return 0;
         anyID me=0; if(ts.getClientID(s,&me)!=ERROR_ok)return 0;
         std::lock_guard<std::mutex> l(mu);
         if(quitting||!cfg.enabled||(!cfg.self && me==from))return 0;
+        if(fromUID && ignoredUsers.count(fromUID))return 0;
         auto text=wide(message); if(text.empty())return 0;
         if(cfg.filter && (word_filter::matches(text,blockedWords) || (cfg.names && word_filter::matches(wide(name),blockedWords))))return 0;
         // Limit UTF-16 length without leaving a dangling high surrogate.
@@ -214,7 +246,8 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
         "语速加快（+1）", "语速减慢（-1）",
         "音量增加（+10）", "音量减小（-10）",
         "查看当前设置", "重新读取配置文件", "恢复默认设置",
-        "违禁词过滤：开启 / 关闭", "编辑违禁词库…", "重新加载违禁词库"
+        "违禁词过滤：开启 / 关闭", "编辑违禁词库…", "重新加载违禁词库", "查看不朗读名单",
+        "不朗读此用户的文字消息", "恢复朗读此用户的文字消息", "查看此用户的朗读状态"
     };
     constexpr size_t count=sizeof(labels)/sizeof(labels[0]);
     auto list=static_cast<PluginMenuItem**>(std::calloc(count+1,sizeof(PluginMenuItem*)));
@@ -225,14 +258,48 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
             for(size_t j=0;j<i;++j) std::free(list[j]);
             std::free(list); return;
         }
-        list[i]->type=PLUGIN_MENU_TYPE_GLOBAL;
-        list[i]->id=static_cast<int>(i)+1;
+        list[i]->type=i<16?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT;
+        list[i]->id=i<16?static_cast<int>(i)+1:101+static_cast<int>(i)-16;
         strcpy_s(list[i]->text,PLUGIN_MENU_BUFSZ,labels[i]);
     }
     *items=list;
 }
-API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
-    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>15) return;
+API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64 selected) {
+    
+    if(type==PLUGIN_MENU_TYPE_CLIENT && id>=101 && id<=103) {
+        try {
+            if(selected==0 || selected>65535)return;
+            char* allocated=nullptr;
+            if(ts.getClientVariableAsString(s,static_cast<anyID>(selected),CLIENT_UNIQUE_IDENTIFIER,&allocated)!=ERROR_ok || !allocated) {
+                reply(s,"无法获取该用户身份，请在其在线时重试。");return;
+            }
+            std::string uid;
+            try {uid=allocated;} catch(...) {ts.freeMemory(allocated);throw;}
+            ts.freeMemory(allocated);
+            if(!validUID(uid)){reply(s,"该用户身份无效，未修改名单。");return;}
+            std::lock_guard<std::mutex> l(mu);
+            if(quitting)return;
+            const bool existed=ignoredUsers.count(uid)!=0;
+            if(id==103){reply(s,existed?"此用户在不朗读名单中。":"此用户的消息允许朗读（仍受其他开关和过滤设置影响）。");return;}
+            if(id==101 && !existed && ignoredUsers.size()>=256){reply(s,"不朗读名单已满（最多 256 个用户）。");return;}
+            if(id==101)ignoredUsers.insert(uid);else ignoredUsers.erase(uid);
+            if(!saveIgnoredLocked()) {
+                if(existed)ignoredUsers.insert(uid);else ignoredUsers.erase(uid);
+                reply(s,"名单保存失败，修改已撤回，请检查配置目录是否可写。");return;
+            }
+            clearLocked();
+            reply(s,id==101?"已保存：不再朗读此用户的文字消息。":"已保存：恢复朗读此用户的文字消息。");
+        } catch(...) {reply(s,"无法修改不朗读名单，请重试。");}
+        return;
+    }
+    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>16) return;
+    if(id==16) {
+        std::lock_guard<std::mutex> l(mu);
+        reply(s,"不朗读名单（用户唯一身份 UID）："+std::to_string(ignoredUsers.size())+" 人");
+        for(const auto& uid:ignoredUsers)reply(s,"UID: "+uid);
+        return;
+    }
+
     if(id==14) { editWords(); return; }
     // The menu requires no chat commands. Status is displayed locally after changes.
     try {
@@ -250,7 +317,7 @@ API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64) {
                 case 8: cfg.volume=std::min(100,cfg.volume+10); break;
                 case 9: cfg.volume=std::max(0,cfg.volume-10); break;
                 case 10: break;
-                case 11: loadLocked(); clearLocked(); break;
+                case 11: loadLocked(); loadIgnoredLocked(); clearLocked(); break;
                 case 12: cfg=Settings{}; break;
                 case 13: cfg.filter=!cfg.filter; break;
                 case 15: loadWordsLocked(); clearLocked(); break;

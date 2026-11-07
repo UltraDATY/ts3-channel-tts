@@ -27,8 +27,8 @@ int main(){
     assert(init()==0); reg("test-channel-tts");
   PluginMenuItem** items=nullptr; char* icon=nullptr; menus(&items,&icon);
   assert(items && !icon);
-  for(int j=0;j<15;j++){assert(items[j] && items[j]->id==j+1 && items[j]->type==PLUGIN_MENU_TYPE_GLOBAL);assert(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,items[j]->text,-1,nullptr,0)>0);freeMem(items[j]);}
-  assert(items[15]==nullptr);freeMem(items);
+  for(int j=0;j<19;j++){assert(items[j] && items[j]->id==(j<16?j+1:101+j-16) && items[j]->type==(j<16?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT));assert(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,items[j]->text,-1,nullptr,0)>0);freeMem(items[j]);}
+  assert(items[19]==nullptr);freeMem(items);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,12,0);
   assert(lastMessage.find("语速：0；音量：80")!=std::string::npos);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,2,0);assert(lastMessage.find("已关闭")!=std::string::npos);
@@ -39,9 +39,9 @@ int main(){
   assert(lastMessage.find("语速：10")!=std::string::npos);
   for(int j=0;j<25;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,7,0);
   assert(lastMessage.find("语速：-10")!=std::string::npos);
-  for(int j=0;j<15;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,8,0);
+  for(int j=0;j<19;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,8,0);
   assert(lastMessage.find("音量：100")!=std::string::npos);
-  for(int j=0;j<15;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,9,0);
+  for(int j=0;j<19;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,9,0);
   assert(lastMessage.find("音量：0")!=std::string::npos);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,11,0);assert(lastMessage.find("音量：0")!=std::string::npos);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,3,0);click(1,PLUGIN_MENU_TYPE_GLOBAL,10,0);
@@ -55,6 +55,7 @@ int main(){
  }
  FreeLibrary(dll);std::cout<<"PASS: exports, init/shutdown x3, callbacks, commands, menus, UTF-8 labels, bounds and saved settings\n";
 }
+
 
 
 
