@@ -27,8 +27,9 @@ int main(){
     assert(init()==0); reg("test-channel-tts");
   PluginMenuItem** items=nullptr; char* icon=nullptr; menus(&items,&icon);
   assert(items && !icon);
-  for(int j=0;j<20;j++){assert(items[j] && items[j]->id==(j<17?j+1:101+j-17) && items[j]->type==(j<17?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT));assert(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,items[j]->text,-1,nullptr,0)>0);freeMem(items[j]);}
-  assert(items[20]==nullptr);freeMem(items);
+  const int ids[]={17,18,3,101,102};
+  for(int j=0;j<5;j++){assert(items[j] && items[j]->id==ids[j] && items[j]->type==(j<3?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT));assert(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,items[j]->text,-1,nullptr,0)>0);freeMem(items[j]);}
+  assert(items[5]==nullptr);freeMem(items);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,12,0);
   assert(lastMessage.find("语速：0；音量：80")!=std::string::npos);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,2,0);assert(lastMessage.find("已关闭")!=std::string::npos);
@@ -43,7 +44,7 @@ int main(){
   assert(lastMessage.find("音量：100")!=std::string::npos);
   for(int j=0;j<20;j++)click(1,PLUGIN_MENU_TYPE_GLOBAL,9,0);
   assert(lastMessage.find("音量：0")!=std::string::npos);
-  click(1,PLUGIN_MENU_TYPE_GLOBAL,11,0);assert(lastMessage.find("音量：0")!=std::string::npos);
+  click(1,PLUGIN_MENU_TYPE_GLOBAL,11,0);cmd(1,"status");assert(lastMessage.find("音量：0")!=std::string::npos);
   click(1,PLUGIN_MENU_TYPE_GLOBAL,3,0);click(1,PLUGIN_MENU_TYPE_GLOBAL,10,0);
   cmd(1,"volume 0");cmd(1,"on");cmd(1,"self off");
   assert(msg(1,2,0,8,"Alice","","<xml>hello</xml>",0)==0);

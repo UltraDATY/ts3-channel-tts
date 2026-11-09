@@ -93,8 +93,3 @@ void loadUILanguage() {
     if(!path.empty())GetPrivateProfileStringW(L"ui",L"language",L"zh-CN",value,32,path.c_str());
     englishUI.store(_wcsicmp(value,L"en")==0 || _wcsicmp(value,L"en-US")==0);
 }
-bool saveUILanguage(bool english) {
-    std::lock_guard<std::mutex> lock(mu);
-    if(!WritePrivateProfileStringW(L"ui",L"language",english?L"en":L"zh-CN",ini.c_str()))return false;
-    englishUI.store(english);return true;
-}

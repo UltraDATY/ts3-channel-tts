@@ -16,27 +16,7 @@ bool parseEditorWords(const std::wstring& text,std::vector<std::wstring>& words,
     }
     return true;
 }
-bool saveEditorWords(const std::wstring& text,bool enabled,std::wstring& error) {
-    std::vector<std::wstring> next;
-    if(!parseEditorWords(text,next,error))return false;
-    std::string bytes="\xEF\xBB\xBF";
-    for(const auto& word:next)bytes+=utf8(word.c_str())+"\r\n";
-    auto dir=std::filesystem::path(wordPath).parent_path().wstring();
-    wchar_t temporary[MAX_PATH]{};
-    if(!GetTempFileNameW(dir.c_str(),L"tts",0,temporary)){error=wtr(L"无法创建词库文件，请检查配置目录是否可写。");return false;}
-    HANDLE file=CreateFileW(temporary,GENERIC_WRITE,0,nullptr,TRUNCATE_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
-    DWORD written=0;
-    bool ok=file!=INVALID_HANDLE_VALUE;
-    if(ok){ok=WriteFile(file,bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr) && written==bytes.size();if(ok)ok=FlushFileBuffers(file)!=0;CloseHandle(file);}
-    if(ok)ok=MoveFileExW(temporary,wordPath.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
-    if(!ok){DeleteFileW(temporary);error=wtr(L"词库保存失败，原词库未修改。请检查文件是否被占用或目录是否可写。");return false;}
-    std::lock_guard<std::mutex> lock(mu);
-    blockedWords=std::move(next);clearLocked();
-    if(!WritePrivateProfileStringW(L"tts",L"filter",enabled?L"1":L"0",ini.c_str())) {
-        error=wtr(L"词库已保存并生效，但过滤开关保存失败，请检查配置文件权限后重试。");return false;
-    }
-    cfg.filter=enabled;return true;
-}
+bool saveEditorWords(const std::wstring& text,bool enabled,std::wstring& error);
 HWND dialogControl(HWND dialog,const wchar_t* cls,const wchar_t* text,DWORD style,int id,int x,int y,int w,int h) {
     RECT r{x,y,x+w,y+h};MapDialogRect(dialog,&r);
     HWND item=CreateWindowExW(wcscmp(cls,L"EDIT")==0?WS_EX_CLIENTEDGE:0,cls,text,WS_CHILD|WS_VISIBLE|style,r.left,r.top,r.right-r.left,r.bottom-r.top,dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);
@@ -73,7 +53,11 @@ INT_PTR CALLBACK wordsDialogProc(HWND dialog,UINT message,WPARAM wp,LPARAM) {
     }catch(...){SetDlgItemTextW(dialog,WORDS_STATUS,wtr(L"无法应用设置，请重试。原有设置仍然保留。"));}
     return FALSE;
 }
-INT_PTR showNativeDialog(DLGPROC procedure,short width,short height) {
+INT_PTR showNativeDialog(DLGPROC procedure,short width,short height,LPARAM data=0,WORD fontSize=10) {
+    HMODULE module=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&showNativeDialog),&module);
+    struct ThemeContext {HANDLE handle=INVALID_HANDLE_VALUE;ULONG_PTR cookie=0;~ThemeContext(){if(cookie)DeactivateActCtx(0,cookie);if(handle!=INVALID_HANDLE_VALUE)ReleaseActCtx(handle);}} theme;
+    ACTCTXW context{};context.cbSize=sizeof(context);context.dwFlags=ACTCTX_FLAG_HMODULE_VALID|ACTCTX_FLAG_RESOURCE_NAME_VALID;context.hModule=module;context.lpResourceName=MAKEINTRESOURCEW(101);
+    theme.handle=CreateActCtxW(&context);if(theme.handle!=INVALID_HANDLE_VALUE)ActivateActCtx(theme.handle,&theme.cookie);
     // A zero-control template; controls are created in WM_INITDIALOG in dialog units.
     std::vector<DWORD> memory(256,0);
     auto t=reinterpret_cast<DLGTEMPLATE*>(memory.data());
@@ -81,11 +65,11 @@ INT_PTR showNativeDialog(DLGPROC procedure,short width,short height) {
     t->cx=width;t->cy=height;
     auto p=reinterpret_cast<WORD*>(t+1);*p++=0;*p++=0;
     const wchar_t title[]=L"Channel TTS";
-    memcpy(p,title,sizeof(title));p+=sizeof(title)/sizeof(WORD);*p++=10;
+    memcpy(p,title,sizeof(title));p+=sizeof(title)/sizeof(WORD);*p++=fontSize;
     const wchar_t font[]=L"Microsoft YaHei UI";memcpy(p,font,sizeof(font));
     HWND owner=GetForegroundWindow();DWORD process=0;GetWindowThreadProcessId(owner,&process);
     if(process!=GetCurrentProcessId())owner=nullptr;
-    return DialogBoxIndirectParamW(GetModuleHandleW(nullptr),t,owner,procedure,0);
+    return DialogBoxIndirectParamW(GetModuleHandleW(nullptr),t,owner,procedure,data);
 }
 void editWords() {
     if(wordsDialog){SetForegroundWindow(wordsDialog);return;}

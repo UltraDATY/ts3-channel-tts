@@ -1,5 +1,7 @@
 #include <windows.h>
 #include <sapi.h>
+#include <commctrl.h>
+#pragma comment(lib,"comctl32.lib")
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -75,14 +77,6 @@ void createWordsFile() {
     DWORD written=0; WriteFile(file,initial,sizeof(initial)-1,&written,nullptr); CloseHandle(file);
 }
 void clearLocked() { queue.clear(); ++generation; cv.notify_all(); }
-void saveLocked() {
-    auto put=[](const wchar_t* k,int v){ auto s=std::to_wstring(v); return WritePrivateProfileStringW(L"tts",k,s.c_str(),ini.c_str()); };
-    bool ok=put(L"enabled",cfg.enabled)!=0;
-    ok=(put(L"self",cfg.self)!=0)&&ok; ok=(put(L"names",cfg.names)!=0)&&ok;
-    ok=(put(L"filter",cfg.filter)!=0)&&ok;
-    ok=(put(L"rate",cfg.rate)!=0)&&ok; ok=(put(L"volume",cfg.volume)!=0)&&ok;
-    if(!ok) ts.logMessage(tr("无法保存 channel_tts.ini 配置文件"),LogLevel_WARNING,"Channel TTS",0);
-}
 void loadLocked() {
     auto get=[](const wchar_t* k,int d){ return static_cast<int>(GetPrivateProfileIntW(L"tts",k,d,ini.c_str())); };
     cfg.enabled=get(L"enabled",1)!=0; cfg.self=get(L"self",0)!=0; cfg.names=get(L"names",1)!=0;
@@ -97,7 +91,6 @@ std::string utf8(const wchar_t* value) {
     text.pop_back();return text;
 }
 #include "words_dialog.h"
-#include "settings_dialog.h"
 bool validUID(const std::string& uid) {
     return !uid.empty() && uid.size()<=128 && uid.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")==std::string::npos;
 }
@@ -120,6 +113,8 @@ bool saveIgnoredLocked() {
     section.push_back(L'\0');section.push_back(L'\0');
     return WritePrivateProfileSectionW(L"ignored_users",section.c_str(),ini.c_str())!=0;
 }
+#include "settings_store.h"
+#include "settings_dialog.h"
 void speech(std::promise<HRESULT> ready) {
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     if(FAILED(hr)) { ready.set_value(hr); return; }
@@ -157,7 +152,7 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.5.0";}
+API const char* ts3plugin_version(){return "1.6.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
 API const char* ts3plugin_description(){return tr("使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。");}
@@ -188,19 +183,27 @@ API void ts3plugin_configure(void*,void*){openSettings();}
 API const char* ts3plugin_commandKeyword(){return "tts";}
 API int ts3plugin_processCommand(uint64 s,const char* command){
     try {
-        std::istringstream in(command?command:""); std::string cmd,arg,extra; in>>cmd>>arg>>extra;
-        std::lock_guard<std::mutex> l(mu);
-        if(cmd=="status") {reply(s,std::string(tr("频道文字朗读："))+(cfg.enabled?tr("已开启"):tr("已关闭"))+tr("；朗读自己：")+(cfg.self?tr("是"):tr("否"))+tr("；朗读昵称：")+(cfg.names?tr("是"):tr("否"))+tr("；语速：")+std::to_string(cfg.rate)+tr("；音量：")+std::to_string(cfg.volume)+tr("；违禁词过滤：")+(cfg.filter?tr("已开启"):tr("已关闭"))+tr("；词库数量：")+std::to_string(blockedWords.size())+tr("；不朗读用户：")+std::to_string(ignoredUsers.size()));return 0;}
-        if(cmd=="stop"){clearLocked();reply(s,tr("已停止朗读并清空队列，后续消息仍可朗读。"));return 0;}
-        if(cmd=="reload"){loadLocked();loadUILanguage();loadIgnoredLocked();clearLocked();reply(s,tr("已重新读取配置并清空朗读队列。"));return 0;}
-        if((cmd=="on"||cmd=="off") && arg.empty()) cfg.enabled=cmd=="on";
-        else if((cmd=="self"||cmd=="names") && (arg=="on"||arg=="off") && extra.empty()) {if(cmd=="self")cfg.self=arg=="on";else cfg.names=arg=="on";}
-        else if((cmd=="rate"||cmd=="volume") && !arg.empty() && extra.empty()) {
-            size_t used=0; int v=std::stoi(arg,&used);
-            if(used!=arg.size() || (cmd=="rate"?(v< -10||v>10):(v<0||v>100))) {reply(s,tr("数值超出范围：语速为 -10 至 10，音量为 0 至 100。"));return 0;}
-            if(cmd=="rate")cfg.rate=v;else cfg.volume=v;
-        } else {reply(s,tr("频道文字朗读帮助（on=开启，off=关闭）：\n/tts on 或 /tts off：开启或关闭朗读\n/tts stop：停止当前朗读并清空队列\n/tts status：查看当前设置\n/tts reload：重新读取配置文件\n/tts self on 或 off：是否朗读自己的消息\n/tts names on 或 off：是否朗读昵称\n/tts rate 数值：设置语速（-10 至 10）\n/tts volume 数值：设置音量（0 至 100）"));return 0;}
-        clearLocked();saveLocked(); reply(s,tr("设置已更新，并已尝试保存到配置文件。"));
+        std::istringstream in(command?command:"");std::string cmd,arg,extra;in>>cmd>>arg>>extra;
+        auto draft=currentDraft();auto& c=draft.settings;
+        if(cmd=="status") {
+            reply(s,std::string(tr("频道文字朗读："))+(c.enabled?tr("已开启"):tr("已关闭"))+tr("；朗读自己：")+(c.self?tr("是"):tr("否"))+tr("；朗读昵称：")+(c.names?tr("是"):tr("否"))+tr("；语速：")+std::to_string(c.rate)+tr("；音量：")+std::to_string(c.volume)+tr("；违禁词过滤：")+(c.filter?tr("已开启"):tr("已关闭"))+tr("；词库数量：")+std::to_string(draft.words.size())+tr("；不朗读用户：")+std::to_string(draft.ignored.size()));return 0;
+        }
+        if(cmd=="stop"){clear();reply(s,tr("已停止朗读并清空队列，后续消息仍可朗读。"));return 0;}
+        if(cmd=="reload"){
+            {std::lock_guard<std::mutex> lock(mu);loadLocked();loadUILanguage();loadIgnoredLocked();loadWordsLocked();clearLocked();}
+            reply(s,tr("已重新读取配置并清空朗读队列。"));return 0;
+        }
+        if((cmd=="on"||cmd=="off") && arg.empty())c.enabled=cmd=="on";
+        else if((cmd=="self"||cmd=="names") && (arg=="on"||arg=="off") && extra.empty()){if(cmd=="self")c.self=arg=="on";else c.names=arg=="on";}
+        else if((cmd=="rate"||cmd=="volume") && !arg.empty() && extra.empty()){
+            size_t used=0;int value=std::stoi(arg,&used);
+            if(used!=arg.size() || (cmd=="rate"?(value < -10 || value>10):(value<0 || value>100))){reply(s,tr("数值超出范围：语速为 -10 至 10，音量为 0 至 100。"));return 0;}
+            if(cmd=="rate")c.rate=value;else c.volume=value;
+        }else{
+            reply(s,englishUI.load()?"Open Plugins > Channel TTS > Settings for all options. Optional commands: /tts on, off, stop, status, reload, self on|off, names on|off, rate -10..10, volume 0..100.":"在 插件 → 频道文字朗读 → 设置 中调整全部选项。可选命令：/tts on、off、stop、status、reload、self on|off、names on|off、rate -10..10、volume 0..100。");return 0;
+        }
+        std::wstring error;
+        if(commitDraft(draft,error))reply(s,englishUI.load()?"Saved and applied.":"已保存并应用。");else reply(s,utf8(error.c_str()));
     }catch(...){reply(s,tr("频道文字朗读：命令参数无效或发生内部错误，输入 /tts help 查看帮助。"));}
     return 0;
 }
@@ -239,14 +242,10 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
     *items=nullptr; *icon=nullptr;
     loadUILanguage();
     const char* labels[]={
-        tr("开启朗读"), tr("关闭朗读"), tr("停止当前朗读并清空队列"),
-        tr("朗读自己的消息：开启 / 关闭"), tr("朗读发送者昵称：开启 / 关闭"),
-        tr("语速加快（+1）"), tr("语速减慢（-1）"),
-        tr("音量增加（+10）"), tr("音量减小（-10）"),
-        tr("查看当前设置"), tr("重新读取配置文件"), tr("恢复默认设置"),
-        tr("违禁词过滤：开启 / 关闭"), tr("违禁词设置…"), tr("重新加载违禁词库"), tr("查看不朗读名单"), "设置 / Settings…",
-        tr("不朗读此用户的文字消息"), tr("恢复朗读此用户的文字消息"), tr("查看此用户的朗读状态")
+        "设置 / Settings…", "朗读：开启 / 关闭 | Speech on/off", "停止朗读 / Stop speech",
+        tr("不朗读此用户的文字消息"), tr("恢复朗读此用户的文字消息")
     };
+    const int ids[]={17,18,3,101,102};
     constexpr size_t count=sizeof(labels)/sizeof(labels[0]);
     auto list=static_cast<PluginMenuItem**>(std::calloc(count+1,sizeof(PluginMenuItem*)));
     if(!list) return;
@@ -256,8 +255,8 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
             for(size_t j=0;j<i;++j) std::free(list[j]);
             std::free(list); return;
         }
-        list[i]->type=i<17?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT;
-        list[i]->id=i<17?static_cast<int>(i)+1:101+static_cast<int>(i)-17;
+        list[i]->type=i<3?PLUGIN_MENU_TYPE_GLOBAL:PLUGIN_MENU_TYPE_CLIENT;
+        list[i]->id=ids[i];
         strcpy_s(list[i]->text,PLUGIN_MENU_BUFSZ,labels[i]);
     }
     *items=list;
@@ -290,43 +289,27 @@ API void ts3plugin_onMenuItemEvent(uint64 s,PluginMenuType type,int id,uint64 se
         } catch(...) {reply(s,tr("无法修改不朗读名单，请重试。"));}
         return;
     }
-    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>17) return;
-    if(id==16) {
-        std::lock_guard<std::mutex> l(mu);
-        reply(s,tr("不朗读名单（用户唯一身份 UID）：")+std::to_string(ignoredUsers.size())+tr(" 人"));
-        for(const auto& uid:ignoredUsers)reply(s,"UID: "+uid);
-        return;
-    }
-
+    if(type!=PLUGIN_MENU_TYPE_GLOBAL || id<1 || id>18) return;
+    if(id==16) { openSettings(2); return; }
     if(id==17) { openSettings(); return; }
-    if(id==14) { editWords(); return; }
-    // The menu requires no chat commands. Status is displayed locally after changes.
+    if(id==14) { openSettings(1); return; }
     try {
-        {
-            std::lock_guard<std::mutex> l(mu);
-            if(quitting) return;
-            switch(id) {
-                case 1: cfg.enabled=true; break;
-                case 2: cfg.enabled=false; break;
-                case 3: clearLocked(); break;
-                case 4: cfg.self=!cfg.self; break;
-                case 5: cfg.names=!cfg.names; break;
-                case 6: cfg.rate=std::min(10,cfg.rate+1); break;
-                case 7: cfg.rate=std::max(-10,cfg.rate-1); break;
-                case 8: cfg.volume=std::min(100,cfg.volume+10); break;
-                case 9: cfg.volume=std::max(0,cfg.volume-10); break;
-                case 10: break;
-                case 11: loadLocked(); loadUILanguage(); loadIgnoredLocked(); clearLocked(); break;
-                case 12: cfg=Settings{}; break;
-                case 13: cfg.filter=!cfg.filter; break;
-                case 15: loadWordsLocked(); clearLocked(); break;
-            }
-            if(id!=3 && id!=10 && id!=11 && id!=15) { clearLocked(); saveLocked(); }
+        if(id==3){clear();reply(s,tr("已停止朗读并清空队列。"));return;}
+        if(id==10){ts3plugin_processCommand(s,"status");return;}
+        if(id==11){ts3plugin_processCommand(s,"reload");return;}
+        if(id==15){std::lock_guard<std::mutex> lock(mu);loadWordsLocked();clearLocked();return;}
+        auto draft=currentDraft();auto& c=draft.settings;
+        switch(id){
+            case 18:c.enabled=!c.enabled;break;
+            case 1:c.enabled=true;break;case 2:c.enabled=false;break;
+            case 4:c.self=!c.self;break;case 5:c.names=!c.names;break;
+            case 6:c.rate=std::min(10,c.rate+1);break;case 7:c.rate=std::max(-10,c.rate-1);break;
+            case 8:c.volume=std::min(100,c.volume+10);break;case 9:c.volume=std::max(0,c.volume-10);break;
+            case 12:c=Settings{};break;case 13:c.filter=!c.filter;break;
+            default:return;
         }
-        if(id==3) reply(s,tr("已停止朗读并清空队列。"));
+        std::wstring error;
+        if(!commitDraft(draft,error)){reply(s,utf8(error.c_str()));return;}
         ts3plugin_processCommand(s,"status");
-    } catch(...) {
-        reply(s,tr("频道文字朗读：无法应用菜单设置，请查看客户端日志。"));
-    }
+    }catch(...){reply(s,tr("频道文字朗读：无法应用菜单设置，请查看客户端日志。"));}
 }
-

@@ -25,7 +25,7 @@ int main(){
     cfg.names=false;assert(send("正常内容","测试禁词用户")==1);
     cfg.filter=false;assert(send("测试禁词")==1);
     cfg.filter=true;assert(send((std::string(600,'a')+"测试禁词").c_str())==0);
-    saveLocked();cfg.filter=false;loadLocked();assert(cfg.filter);
+    std::wstring saveError;assert(commitDraft(currentDraft(),saveError));cfg.filter=false;loadLocked();assert(cfg.filter);
     ts3plugin_onMenuItemEvent(1,PLUGIN_MENU_TYPE_GLOBAL,13,0);assert(!cfg.filter);
     loadLocked();assert(!cfg.filter);
     ts3plugin_onMenuItemEvent(1,PLUGIN_MENU_TYPE_GLOBAL,13,0);assert(cfg.filter);

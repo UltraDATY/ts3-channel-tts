@@ -3,7 +3,7 @@
 #include <iostream>
 int scenario=0, ticks=0;
 void CALLBACK drive(HWND,UINT,UINT_PTR timer,DWORD) {
-    if(!wordsDialog){assert(++ticks<100);return;}
+    if(!wordsDialog || !IsWindowVisible(wordsDialog)){assert(++ticks<100);return;}
     HWND dialog=wordsDialog;
     assert(GetDlgItem(dialog,WORDS_EDIT) && GetDlgItem(dialog,WORDS_ENABLED));
     assert(GetDlgItem(dialog,IDOK) && GetDlgItem(dialog,IDCANCEL));

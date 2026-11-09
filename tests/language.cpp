@@ -1,10 +1,11 @@
 #include "../src/plugin.cpp"
 #include <cassert>
 #include <iostream>
+#include "dialog_capture.h"
 int action=0,ticks=0;
 void CALLBACK interact(HWND,UINT,UINT_PTR timer,DWORD) {
     HWND dialog=action==3?wordsDialog:settingsDialog;
-    if(!dialog){assert(++ticks<100);return;}
+    if(!dialog || !IsWindowVisible(dialog) || (action!=3 && settingsState(dialog)->initializing)){assert(++ticks<100);return;}
     KillTimer(nullptr,timer);
     wchar_t text[256]{};
     if(action==3){
@@ -15,14 +16,22 @@ void CALLBACK interact(HWND,UINT,UINT_PTR timer,DWORD) {
         GetDlgItemTextW(dialog,WORDS_STATUS,text,256);assert(wcsstr(text,L"128 UTF-16 units"));
         SendMessageW(dialog,WM_CLOSE,0,0);return;
     }
+    if(action==2){captureDialog(dialog,L"build/settings-English.bmp");}
     assert(GetDlgItem(dialog,UI_LANGUAGE));
     assert(SendDlgItemMessageW(dialog,UI_LANGUAGE,CB_GETCOUNT,0,0)==2);
     auto current=SendDlgItemMessageW(dialog,UI_LANGUAGE,CB_GETCURSEL,0,0);
     assert(current==(englishUI.load()?1:0));
     GetDlgItemTextW(dialog,IDOK,text,256);
-    assert(wcscmp(text,englishUI.load()?L"Save and apply":L"保存并应用")==0);
+    assert(wcscmp(text,englishUI.load()?L"OK":L"确定")==0);
     SendDlgItemMessageW(dialog,UI_LANGUAGE,CB_SETCURSEL,action==2?0:1,0);
-    SendMessageW(dialog,WM_COMMAND,action==0?IDCANCEL:IDOK,0);
+    SendMessageW(dialog,WM_COMMAND,action==0?IDCANCEL:(action==1?UI_APPLY:IDOK),0);
+    if(action==1){
+        assert(settingsDialog==dialog && englishUI.load() && !IsWindowEnabled(GetDlgItem(dialog,UI_APPLY)));
+        GetDlgItemTextW(dialog,IDOK,text,256);assert(wcscmp(text,L"OK")==0);
+        SendDlgItemMessageW(dialog,UI_LANGUAGE,CB_SETCURSEL,0,0);
+        SendMessageW(dialog,WM_COMMAND,MAKEWPARAM(UI_LANGUAGE,CBN_SELCHANGE),0);assert(IsWindowEnabled(GetDlgItem(dialog,UI_APPLY)));
+        SendMessageW(dialog,WM_COMMAND,IDCANCEL,0);
+    }
     if(action==4){
         assert(settingsDialog==dialog);GetDlgItemTextW(dialog,UI_LANGUAGE_NOTE,text,256);assert(wcsstr(text,L"失败"));
         SendMessageW(dialog,WM_CLOSE,0,0);
@@ -35,10 +44,10 @@ void dialogAction(int next) {
 }
 void checkMenus(bool english) {
     PluginMenuItem** items=nullptr;char* icon=nullptr;ts3plugin_initMenus(&items,&icon);assert(items);
-    assert(strcmp(items[0]->text,english?"Enable speech":"开启朗读")==0);
-    assert(items[16]->id==17 && strstr(items[16]->text,"Settings"));
-    assert(items[17]->id==101 && items[17]->type==PLUGIN_MENU_TYPE_CLIENT);
-    assert(!items[20]);for(int i=0;i<20;i++)ts3plugin_freeMemory(items[i]);ts3plugin_freeMemory(items);
+    assert(items[0]->id==17 && strstr(items[0]->text,"Settings"));
+    assert(items[3]->id==101 && strcmp(items[3]->text,english?"Ignore this user for speech":"不朗读此用户的文字消息")==0);
+    assert(!items[5]);for(int i=0;i<5;i++)ts3plugin_freeMemory(items[i]);ts3plugin_freeMemory(items);
+
 }
 int main(){
     auto dir=std::filesystem::temp_directory_path()/("tts-language-"+std::to_string(GetCurrentProcessId()));std::filesystem::create_directories(dir);

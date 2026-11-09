@@ -1,4 +1,4 @@
-param([string]$OutputPath = (Join-Path $PSScriptRoot 'ChannelTTS-1.5.0-win64.ts3_plugin'))
+param([string]$OutputPath = (Join-Path $PSScriptRoot 'ChannelTTS-1.6.0-win64.ts3_plugin'))
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression
 $dll=Join-Path $PSScriptRoot 'channel_tts_win64.dll'
