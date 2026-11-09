@@ -72,17 +72,6 @@ void createWordsFile() {
     const char initial[]="\xEF\xBB\xBF# 违禁词库：UTF-8 编码，每行一个词；# 开头为注释。\r\n# 命中正文或正在朗读的昵称时跳过整条语音；英文不区分大小写。\r\n# 修改保存后，点击插件菜单中的“重新加载违禁词库”。\r\n傻逼\r\n操你妈\r\nfuck\r\n";
     DWORD written=0; WriteFile(file,initial,sizeof(initial)-1,&written,nullptr); CloseHandle(file);
 }
-void editWords() {
-    wchar_t system[MAX_PATH]{};
-    const UINT n=GetSystemDirectoryW(system,MAX_PATH);
-    if(!n || n>=MAX_PATH) return;
-    const std::wstring exe=std::wstring(system)+L"\\notepad.exe";
-    std::wstring command=L"\""+exe+L"\" \""+wordPath+L"\"";
-    STARTUPINFOW startup{}; startup.cb=sizeof(startup); PROCESS_INFORMATION process{};
-    if(CreateProcessW(exe.c_str(),command.data(),nullptr,nullptr,FALSE,0,nullptr,nullptr,&startup,&process)) {
-        CloseHandle(process.hThread);CloseHandle(process.hProcess);
-    } else ts.logMessage("无法打开记事本，请手动编辑 channel_tts_blocked_words.txt。",LogLevel_WARNING,"Channel TTS",0);
-}
 void clearLocked() { queue.clear(); ++generation; cv.notify_all(); }
 void saveLocked() {
     auto put=[](const wchar_t* k,int v){ auto s=std::to_wstring(v); return WritePrivateProfileStringW(L"tts",k,s.c_str(),ini.c_str()); };
@@ -105,6 +94,7 @@ std::string utf8(const wchar_t* value) {
     std::string text(n,'\0'); WideCharToMultiByte(CP_UTF8,0,value,-1,text.data(),n,nullptr,nullptr);
     text.pop_back();return text;
 }
+#include "words_dialog.h"
 bool validUID(const std::string& uid) {
     return !uid.empty() && uid.size()<=128 && uid.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")==std::string::npos;
 }
@@ -164,7 +154,7 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.3.0";}
+API const char* ts3plugin_version(){return "1.4.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
 API const char* ts3plugin_description(){return "使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。";}
@@ -184,6 +174,7 @@ API int ts3plugin_init(){
     } catch(...) { if(worker.joinable()){ {std::lock_guard<std::mutex> l(mu); quitting=true; cv.notify_all();} worker.join(); } return 1; }
 }
 API void ts3plugin_shutdown(){
+    if(wordsDialog) SendMessageW(wordsDialog,WM_CLOSE,0,0);
     {std::lock_guard<std::mutex> l(mu); quitting=true; clearLocked();}
     if(worker.joinable()) worker.join();
     pluginID.clear();
@@ -246,7 +237,7 @@ API void ts3plugin_initMenus(PluginMenuItem*** items,char** icon) {
         "语速加快（+1）", "语速减慢（-1）",
         "音量增加（+10）", "音量减小（-10）",
         "查看当前设置", "重新读取配置文件", "恢复默认设置",
-        "违禁词过滤：开启 / 关闭", "编辑违禁词库…", "重新加载违禁词库", "查看不朗读名单",
+        "违禁词过滤：开启 / 关闭", "违禁词设置…", "重新加载违禁词库", "查看不朗读名单",
         "不朗读此用户的文字消息", "恢复朗读此用户的文字消息", "查看此用户的朗读状态"
     };
     constexpr size_t count=sizeof(labels)/sizeof(labels[0]);
