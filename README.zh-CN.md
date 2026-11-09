@@ -1,6 +1,10 @@
 # 频道文字朗读 / Channel TTS 1.6.0
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 用于 TeamSpeak 3 Windows x64 的 C++17 / API 26 插件。将当前服务器连接中所加入频道的文字消息转换为本机语音，使用 Windows 默认的 64 位 SAPI 兼容声音。
+
+[下载最新版本](https://github.com/UltraDATY/ts3-channel-tts/releases/latest) · [全部历史版本](https://github.com/UltraDATY/ts3-channel-tts/releases)
 
 ## 1.6.0 界面与操作流程
 

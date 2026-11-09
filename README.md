@@ -1,85 +1,108 @@
-# 频道文字朗读 / Channel TTS 1.6.0
+# Channel TTS 1.6.0
 
-用于 TeamSpeak 3 Windows x64 的 C++17 / API 26 插件。将当前服务器连接中所加入频道的文字消息转换为本机语音，使用 Windows 默认的 64 位 SAPI 兼容声音。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## 1.6.0 界面与操作流程
+A C++17 plugin for **TeamSpeak 3 on Windows x64, Plugin API 26**. It reads text messages from your current channel aloud on your computer using the default Windows desktop SAPI voice.
 
-界面参考 TS3“选项”窗口：左侧白底分类导航和自绘蓝灰图标，右侧蓝灰渐变标题栏、浅灰分组区域，底部“确定 / 取消 / 应用”。使用 Windows 原生控件及插件内嵌 Common Controls v6 清单，无需安装 Qt 或额外图片资源。窗口保持宿主 DPI 设置，以对话框单位和 9pt 中文字体布局。
+[Download the latest release](https://github.com/UltraDATY/ts3-channel-tts/releases/latest) · [All releases](https://github.com/UltraDATY/ts3-channel-tts/releases)
 
-顶部 **插件 → 频道文字朗读 (Channel TTS)** 保留三个常用入口：
+## Interface and workflow in 1.6.0
 
-- **设置 / Settings…**：统一设置窗口，也可通过附加组件管理器的插件配置按钮进入。
-- **朗读：开启 / 关闭 | Speech on/off**：立即切换是否朗读，并保存。
-- **停止朗读 / Stop speech**：立即停止当前语音并清空队列，后续消息按已保存的开关处理。
+The settings window follows the layout of TeamSpeak 3's Options dialog: a white navigation sidebar with blue-gray icons, a blue-gray gradient header, grouped settings, and **OK / Cancel / Apply** buttons. It uses native Windows controls and an embedded Common Controls v6 manifest. No Qt installation or external image assets are required. Layout uses dialog units and a 9-point font with Chinese support, without changing the host application's DPI settings.
 
-设置窗口分为三个页面，页面切换保留尚未保存的修改：
+Open **Plugins → 频道文字朗读 (Channel TTS)** for three shortcuts:
 
-| 页面 | 操作 |
+- **设置 / Settings…** opens the unified settings window. You can also use the plugin's configuration button in the Addons manager.
+- **朗读：开启 / 关闭 | Speech on/off** immediately toggles speech and saves the choice.
+- **停止朗读 / Stop speech** stops the current speech and clears the queue. New messages still follow the saved enable/disable setting.
+
+The settings window has three pages. Switching pages preserves unapplied edits.
+
+| Page | Settings |
 | --- | --- |
-| 朗读设置 / Speech | 朗读开关、朗读自己、朗读发送者昵称、滑块及数值框双向调整语速和音量、界面语言、试听 |
-| 违禁词 / Word filter | 过滤开关、每行一词的编辑框、词条数量与限制提示 |
-| 忽略名单 / Ignored users | 查看名单、选中用户并恢复朗读；当前服务器在线用户显示昵称，其余显示 UID |
+| Speech | Enable speech, read your own messages, read sender names, adjust rate and volume with synchronized sliders and number fields, select the interface language, and preview speech |
+| Word filter | Enable filtering, edit one word per line, and view entry counts and limits |
+| Ignored users | View the list and restore speech for selected users; online users on the current server show nicknames, while other users show UIDs |
 
-**确定**统一校验并保存三个页面，随后关闭窗口。**应用**保存全部页面并继续编辑，没有修改时按钮禁用；应用语言后当前窗口即时切换。**取消**或关闭窗口丢弃尚未应用的参数、词库及名单修改，已经应用的修改保留。数值或词库无效时停留在窗口并切到相关页面，输入内容保留。保存失败保留窗口并提示原因，常规文件占用失败会回退磁盘词库，当前设置保持原值。
+**OK** validates and saves all three pages, then closes the window. **Apply** saves all pages and keeps the window open; it is disabled until you make a change. Applying a language choice immediately updates the settings window. **Cancel** or closing the window discards unapplied edits; previously applied changes remain saved. Invalid values keep the window open and select the relevant page without discarding your input. Save failures show an error and keep the window open. Ordinary file-lock failures roll back the word-list file and leave the active settings unchanged.
 
-**试听**使用填写的语速和音量立即播放示例，清空旧语音队列，不保存参数；关闭窗口会停止试听。即便朗读总开关关闭，也可试听。**停止朗读**立即执行。它们属于即时动作，取消设置不会撤销已经停止的语音。
+**Preview** immediately plays a sample using the entered rate and volume, clears the old speech queue, and does not save the entered settings. Preview works even when speech is disabled. Closing the settings window stops the preview. **Stop speech** also runs immediately. Cancel cannot undo these immediate actions.
 
-**恢复朗读默认值**只把朗读参数填回默认值，点击保存后才生效：启用朗读、不读自己、读昵称、语速 0、音量 80、过滤关闭。词库、忽略名单和界面语言保留。
+**Speech defaults** fills in the default speech settings, which take effect only after saving: speech enabled, own messages excluded, sender names included, rate 0, volume 80, and filtering disabled. It preserves the word list, ignored users, and interface language.
 
-界面语言支持简体中文和 English，默认中文。应用后当前设置窗口、状态、提示和帮助跟随选择。顶部三个入口始终双语，用户右键菜单文字需重启 TS3 后刷新。语言设置不翻译聊天内容、不修改词库、不切换 Windows 语音。
+The interface supports **Simplified Chinese and English**, with Chinese selected by default. Applying a choice updates the current settings window, status messages, prompts, and help. The three top-level shortcuts always use bilingual labels. Restart TS3 to refresh existing user context-menu labels. Interface language does not translate messages, modify the word list, or select a different Windows voice.
 
-## 安装与升级
+## Installation and upgrades
 
-1. 使用 Windows 64 位 TeamSpeak 3、API 26（官方 SDK 26 标注 TS3 3.6.0+）。不适用于 TS6、32 位、Linux 或 macOS。
-2. **完全退出 TS3，包括系统托盘**，再双击 `ChannelTTS-1.6.0-win64.ts3_plugin` 安装。
-3. 如果附加组件安装器失败，解压 `ChannelTTS-1.6.0-win64-manual.zip`，将其中 `plugins/channel_tts_win64.dll` 复制到 `%APPDATA%\TS3Client\plugins` 覆盖旧 DLL。便携版使用实际配置目录。
-4. 启动 TS3，在附加组件管理器启用插件，检查版本为 1.6.0。升级保留原配置、词库和忽略名单。
-5. 打开设置检查参数，让另一位用户在当前频道发送文字。测试自己的消息时需勾选“朗读自己的消息”。
+1. Use **TeamSpeak 3 for Windows, 64-bit, Plugin API 26**. The official SDK 26 specifies TS3 3.6.0 or later. This plugin does not support TS6, 32-bit clients, Linux, or macOS.
+2. **Exit TS3 completely, including its system-tray process**, then open `ChannelTTS-1.6.0-win64.ts3_plugin` to install it.
+3. If the addon installer fails, extract `ChannelTTS-1.6.0-win64-manual.zip`. Copy `plugins/channel_tts_win64.dll` into `%APPDATA%\TS3Client\plugins`, replacing the old DLL. For portable installations, use the client's actual configuration directory.
+4. Start TS3, enable the plugin in the Addons manager, and confirm that its version is **1.6.0**. Upgrading preserves your settings, word list, and ignored users.
+5. Open Settings and ask another user to send a channel message. To test your own messages, enable **Read my own messages** first.
 
-语音仅在本机播放，走 Windows 默认输出设备，不注入麦克风或广播到频道，也不自动跟随 TS3 播放设备。中文发音取决于安装的 SAPI 兼容中文声音；部分 Windows OneCore/自然语音不向桌面 SAPI 提供。插件无云服务或 API 密钥。无声时检查总开关、音量、Windows 混音器及默认输出设备；初始化失败查看客户端日志。
+Speech plays locally through the default Windows output device. It is not injected into your microphone or broadcast to the channel, and it does not automatically follow TS3's output-device selection. Chinese speech requires a compatible desktop SAPI Chinese voice; some Windows OneCore or natural voices are not exposed to desktop SAPI. No cloud service or API key is needed. If speech is silent, check the enable switch, volume, Windows volume mixer, and default output device. Initialization errors appear in the client log.
 
-## 音乐机器人与忽略名单
+## Music bots and ignored users
 
-在频道树右键用户，进入 Channel TTS 子菜单，选择“不朗读此用户的文字消息”；需要恢复时选“恢复朗读此用户的文字消息”。右键操作立即保存，失败撤回修改。设置窗口中的移除操作则在点击“确定”或“应用”后生效。
+Right-click a user in the channel tree, open the Channel TTS submenu, and choose **Ignore this user for speech**. Choose **Allow speech for this user** to restore it. Context-menu changes are saved immediately and reverted if saving fails. Removing a user inside Settings takes effect after choosing **OK** or **Apply**.
 
-名单按唯一身份 UID 保存，最多 256 人，跨服务器生效；重连、改名后仍有效，同名不同 UID 不受影响。机器人更换身份需要重新加入。只跳过文字朗读，不隐藏聊天、不静音机器人音乐。在线昵称仅帮助识别，真实匹配始终使用 UID。
+The list stores up to **256 unique user identities (UIDs)** and applies across server connections. Reconnecting or renaming does not remove an entry; another user with the same nickname and a different UID is unaffected. Add a bot again if it changes its identity. Ignoring a user only skips their text-to-speech: it does not hide chat or mute music. Nicknames help identify online users, but matching always uses the UID.
 
-## 违禁词
+## Word filter
 
-在设置窗口的违禁词页编辑并保存，无需记事本或命令。正文包含任一词条时整条跳过；开启昵称朗读时昵称也参与过滤。匹配连续子串，英文忽略大小写，无拼音、谐音、正则或网络词库识别。频道文字显示保留。
+Edit the list on the Word filter page and apply it directly. No text editor or chat command is required. If a message contains any listed entry, the entire message is skipped. Sender names are also checked when reading names is enabled. Matching uses contiguous substrings and ignores English letter case. It does not perform phonetic, homophone, regular-expression, or online-dictionary matching. Chat remains visible.
 
-最多 1000 个词，每词 128 个 UTF-16 单元；空行、行首尾空白和 # 开头的注释忽略。保存空列表可清空词库。保存时整理为每行一个词，不保留注释。首次运行创建三条可修改的示例，不覆盖已有词库。关闭过滤不会删除词库。
+The list supports **1,000 entries**, with **128 UTF-16 code units per entry**. Blank lines, surrounding whitespace, and comments beginning with `#` are ignored. Saving an empty list clears it. Changed lists are saved as one entry per line without comments. First launch creates three editable sample entries without overwriting an existing file. Disabling the filter does not delete your list.
 
-## 配置与可选命令
+## Configuration and optional commands
 
-文件位于 SDK `getConfigPath()` 所返回的目录：
+Files are stored in the directory returned by the SDK's `getConfigPath()`:
 
-- `channel_tts.ini`：`[tts]` 朗读选项、`[ui] language=zh-CN|en`、`[ignored_users]` UID 名单。
-- `channel_tts_blocked_words.txt`：UTF-8 词库，最多 1 MB。手动编辑后执行 `/tts reload`，同时重读设置、语言、名单和词库。
+- `channel_tts.ini`: speech options in `[tts]`, `language=zh-CN` or `language=en` in `[ui]`, and UIDs in `[ignored_users]`.
+- `channel_tts_blocked_words.txt`: a UTF-8 word list, up to 1 MB. After editing files manually, use `/tts reload` to reload settings, language, ignored users, and the word list together.
 
-保留 `/tts on`、`/tts off`、`/tts stop`、`/tts status`、`/tts reload`、`/tts self on|off`、`/tts names on|off`、`/tts rate -10..10`、`/tts volume 0..100`。命令本地处理，不发送到聊天频道。新菜单、窗口和命令使用相同的设置保存流程，保存成功后才更新运行状态。
+Optional commands are handled locally and are not sent to the chat channel.
 
-配置先写同目录临时文件。词库有变化时备份并替换原文件，再替换配置；配置替换失败尝试恢复旧词库。无法回退时保留备份并明确显示路径，未声称断电过程中的跨文件事务保证。升级和卸载不自动删除用户设置。
+| Command | Action |
+| --- | --- |
+| `/tts on`, `/tts off` | Enable or disable speech |
+| `/tts stop` | Stop speech and clear the queue |
+| `/tts status` | Show current settings |
+| `/tts reload` | Reload configuration and clear the queue |
+| `/tts self on`, `/tts self off` | Include or exclude your own messages |
+| `/tts names on`, `/tts names off` | Include or exclude sender names |
+| `/tts rate -2` | Set the rate, from -10 to 10 |
+| `/tts volume 80` | Set the volume, from 0 to 100 |
 
-## 构建与验证
+The settings window, menu shortcuts, and commands share the same save process. Active settings are updated only after a successful save. Configuration is staged in temporary files in the same directory. When the word list changes, the old file is backed up before replacement. If replacing the configuration fails, the plugin attempts to restore the previous word list. If rollback fails, it retains the backup and reports its path. This is not a cross-file transaction guaranteed to survive power loss. Upgrading or uninstalling does not automatically delete user settings.
 
-需要 Visual Studio 2022 或更新版本的 C++ 桌面开发组件、MSVC x64 和 Windows SDK。项目包含官方 API 26 头文件，运行 `build.cmd` 即可，输出 `build/channel_tts_win64.dll`；静态 C++ 运行库，无需另装 VC DLL。也提供 CMake 3.20+ 配置：
+## Building and validation
+
+Install the **Desktop development with C++** workload for Visual Studio 2022 or later, including MSVC x64 and the Windows SDK. Official API 26 headers are included. Run `build.cmd` to produce `build/channel_tts_win64.dll`. The C++ runtime is linked statically, so no separate VC runtime DLLs are required.
+
+CMake 3.20 or later is also supported. Run these commands in an x64 developer terminal with Ninja available:
 
 ```powershell
 cmake -S . -B build-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-cmake
 ```
 
-在 x64 开发者终端执行 CMake。VS2026 需要支持相应版本的新版 CMake。`package.ps1` 将根目录 DLL 和无 BOM 的 ASCII 安装清单打包为 `.ts3_plugin`。
+Visual Studio 2026 requires a CMake version that supports it. To package the result, copy the built DLL into the project root and run `package.ps1`. It packages that DLL and the BOM-free ASCII addon manifest as a `.ts3_plugin` file.
 
-运行 `test.cmd` 构建并执行六组检查：DLL 加载/回调与精简菜单、消息过滤、按 UID 忽略用户、词库对话框、语言持久化及中英文界面、统一设置流程。原生 UI 检查同时覆盖侧栏切换、滑块与数值同步、“应用”后继续编辑、“取消”保留已经应用的值、应用按钮的启用状态和即时语言刷新。流程检查覆盖跨页面草稿、取消不写入、整体验证与保存、名单移除、默认值、试听/停止、文件占用失败回退和临时文件清理。测试窗口短暂显示，测试数据为虚构，不操作真实 TS3。测试截图由测试自有窗口生成。已通过本地测试，真实 TS3 客户端内显示和交互仍待验证。
+Run `test.cmd` to build and execute six test groups: DLL loading/callbacks and the compact menus, message filtering, UID-based ignored users, the word-list dialog, language persistence and bilingual controls, and the unified settings workflow. UI checks cover sidebar navigation, slider/number synchronization, Apply without closing, Cancel preserving applied changes, Apply-button state, and immediate language refresh. Workflow checks also cover drafts across pages, validation, saving and cancellation, restoring users, defaults, preview/stop, file-lock rollback, and temporary-file cleanup.
 
-## 实现范围与来源
+Tests briefly display their own native windows using fictional data. They do not operate a running TS3 client. Screenshots are captured from test-owned windows. **Local tests have passed; appearance and interaction inside the actual TS3 client still need verification.**
 
-API 26 C 导出入口、官方 TS3 函数表，独立线程拥有 COM/SAPI。只处理当前所选服务器连接的频道文字，跳过 TS3 已忽略消息及不朗读名单；默认不读自己。切换连接、自己移动或被踢等事件清空旧语音。队列最多 20 条，正文最多 500 个 UTF-16 单元；完整原文先过滤。使用 `SPF_IS_NOT_XML`，聊天不会作为 SAPI XML 执行。语音线程每 40ms 检查取消；第三方语音引擎阻塞时不能保证卸载耗时。
+## Implementation scope and sources
 
-- [官方 SDK 26](https://github.com/teamspeak/ts3client-pluginsdk/releases/tag/26)，头文件来源 commit `b2f4b8e574d13c584ba8cae0c5ab6e1a0c3048e6`，保留第三方版权声明。
-- [官方插件与 configure 示例](https://github.com/teamspeak/ts3client-pluginsdk/blob/26/src/plugin.c)，设置请求在客户端 GUI 线程运行，无 Qt 依赖。
-- [Microsoft SPEAKFLAGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717252(v=vs.85))。
+The plugin exports the API 26 C entry points and uses the official TS3 function table. A dedicated worker thread owns COM/SAPI. Only channel text from the currently selected server connection is read; TS3-ignored messages and ignored UIDs are excluded, as are your own messages by default. Connection changes, your own channel moves, kicks, and related events clear old speech.
 
-项目自有源码采用 MIT，见 LICENSE；SDK 头文件遵循其适用条款。历代源码及安装包保留于 GitHub Releases：1.0.0 初版、1.0.1 中文、1.1.0 菜单、1.2.0 过滤、1.3.0 忽略用户、1.4.0 词库窗口、1.5.0 中英文切换、1.6.0 统一操作流程。
+The queue holds up to 20 pending messages. Message bodies are limited to 500 UTF-16 code units, with filtering performed on the complete original text first. `SPF_IS_NOT_XML` prevents chat text from being interpreted as SAPI XML. The worker checks cancellation every 40 ms. A third-party speech engine that blocks internally can still delay unloading.
+
+- [Official SDK 26](https://github.com/teamspeak/ts3client-pluginsdk/releases/tag/26): bundled headers come from commit `b2f4b8e574d13c584ba8cae0c5ab6e1a0c3048e6`, with their copyright notices preserved.
+- [Official plugin and configuration example](https://github.com/teamspeak/ts3client-pluginsdk/blob/26/src/plugin.c): settings request the client's GUI thread and do not depend on Qt.
+- [Microsoft SPEAKFLAGS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms717252(v=vs.85)).
+
+Project-owned source code uses the [MIT License](LICENSE). SDK headers remain subject to their applicable terms.
+
+Historical source and installation packages are preserved in [GitHub Releases](https://github.com/UltraDATY/ts3-channel-tts/releases): 1.0.0 initial release, 1.0.1 Chinese UI, 1.1.0 menus, 1.2.0 word filtering, 1.3.0 ignored users, 1.4.0 word-list window, 1.5.0 language switching, and 1.6.0 the unified settings workflow.
