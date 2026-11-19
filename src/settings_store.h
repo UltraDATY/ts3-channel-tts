@@ -11,7 +11,7 @@ SettingsDraft currentDraft() {
     return {cfg,englishUI.load(),blockedWords,ignoredUsers};
 }
 bool sameSpeechSettings(const Settings& a,const Settings& b) {
-    return a.enabled==b.enabled && a.self==b.self && a.names==b.names && a.filter==b.filter && a.rate==b.rate && a.volume==b.volume;
+    return a.enabled==b.enabled && a.self==b.self && a.names==b.names && a.filter==b.filter && a.rate==b.rate && a.volume==b.volume && a.online==b.online && a.region==b.region && a.cloudVoice==b.cloudVoice && a.cloudKey==b.cloudKey;
 }
 struct TemporaryFile {
     std::wstring path;
@@ -29,6 +29,7 @@ bool commitDraft(const SettingsDraft& draft,std::wstring& error) {
     const bool changedWords=draft.words!=blockedWords;
     const bool cancelSpeech=!sameSpeechSettings(cfg,draft.settings) || changedWords || draft.ignored!=ignoredUsers;
     auto failed=[&](){error=uiText(L"保存失败，修改未应用。请检查配置目录权限或文件占用。",L"Save failed. Changes were not applied. Check folder permissions or file locks.");return false;};
+    if(draft.settings.online && !validCloudSettings(draft.settings)){error=uiText(L"请在在线语音页填写有效的区域、声音和密钥。",L"Enter valid region, voice and key on the Online speech page.");return false;}
     TemporaryFile configTemp,wordsTemp,backup;
     if(!configTemp.createNear(ini))return failed();
     DWORD attributes=GetFileAttributesW(ini.c_str());
@@ -38,6 +39,8 @@ bool commitDraft(const SettingsDraft& draft,std::wstring& error) {
     const auto& c=draft.settings;
     bool ok=put(L"enabled",c.enabled) && put(L"self",c.self) && put(L"names",c.names) && put(L"filter",c.filter) && put(L"rate",c.rate) && put(L"volume",c.volume);
     ok=ok && WritePrivateProfileStringW(L"ui",L"language",draft.english?L"en":L"zh-CN",configTemp.path.c_str());
+    std::wstring encryptedKey;if(!protectCloudKey(c.cloudKey,encryptedKey))return failed();
+    ok=ok && WritePrivateProfileStringW(L"cloud",L"enabled",c.online?L"1":L"0",configTemp.path.c_str()) && WritePrivateProfileStringW(L"cloud",L"region",c.region.c_str(),configTemp.path.c_str()) && WritePrivateProfileStringW(L"cloud",L"voice",c.cloudVoice.c_str(),configTemp.path.c_str()) && WritePrivateProfileStringW(L"cloud",L"key_dpapi",encryptedKey.c_str(),configTemp.path.c_str());
     std::wstring section;size_t index=0;
     for(const auto& uid:draft.ignored){section+=L"user"+std::to_wstring(index++)+L"="+wide(uid.c_str());section.push_back(0);}
     section.push_back(0);section.push_back(0);

@@ -5,10 +5,11 @@ constexpr int UI_ENABLED=310, UI_SELF=311, UI_NAMES=312, UI_RATE=313, UI_VOLUME=
 constexpr int UI_WORDS=320, UI_FILTER=321, UI_WORD_COUNT=322, UI_IGNORED=330, UI_REMOVE=331;
 constexpr int UI_DEFAULTS=340, UI_STOP=341, UI_PREVIEW=342, UI_APPLY=343;
 constexpr int UI_PAGE=350,UI_NAV=360,UI_HEADER=361,UI_RATE_SLIDER=362,UI_VOLUME_SLIDER=363;
+constexpr int UI_CLOUD_ENABLE=370,UI_REGION=371,UI_CLOUD_VOICE=372,UI_CLOUD_KEY=373,UI_CLOUD_TEST=374;
 struct ControlLabel { HWND control;const wchar_t* zh;const wchar_t* en; };
 struct SettingsUI {
     SettingsDraft draft;
-    std::vector<HWND> pages[3];
+    std::vector<HWND> pages[4];
     std::vector<ControlLabel> labels;
     std::vector<std::pair<std::string,std::wstring>> onlineNames;
     int page=0;
@@ -32,8 +33,8 @@ void collectOnlineNames(SettingsUI& state) {
 }
 void settingsPage(HWND dialog,int page) {
     auto state=settingsState(dialog);if(!state)return;
-    state->page=std::clamp(page,0,2);SendDlgItemMessageW(dialog,UI_NAV,LB_SETCURSEL,state->page,0);
-    for(int i=0;i<3;i++)for(HWND control:state->pages[i])ShowWindow(control,i==state->page?SW_SHOW:SW_HIDE);
+    state->page=std::clamp(page,0,3);SendDlgItemMessageW(dialog,UI_NAV,LB_SETCURSEL,state->page,0);
+    for(int i=0;i<4;i++)for(HWND control:state->pages[i])ShowWindow(control,i==state->page?SW_SHOW:SW_HIDE);
     InvalidateRect(GetDlgItem(dialog,UI_HEADER),nullptr,TRUE);
 }
 void settingsNotice(HWND dialog,const wchar_t* zh,const wchar_t* en){SetDlgItemTextW(dialog,UI_LANGUAGE_NOTE,uiText(zh,en));}
@@ -62,6 +63,11 @@ std::wstring windowText(HWND control) {
     int length=GetWindowTextLengthW(control);std::wstring text(static_cast<size_t>(length)+1,L'\0');
     GetWindowTextW(control,text.data(),length+1);text.resize(length);return text;
 }
+bool readCloudControls(HWND dialog,Settings& c,bool force=false) {
+    c.online=force || IsDlgButtonChecked(dialog,UI_CLOUD_ENABLE)==BST_CHECKED;
+    c.region=windowText(GetDlgItem(dialog,UI_REGION));c.cloudVoice=windowText(GetDlgItem(dialog,UI_CLOUD_VOICE));c.cloudKey=windowText(GetDlgItem(dialog,UI_CLOUD_KEY));
+    if(c.online && !validCloudSettings(c)){settingsPage(dialog,3);settingsNotice(dialog,L"请填写 Azure Speech 资源的区域、声音名称和密钥。",L"Enter your Azure Speech resource region, voice name and key.");return false;}return true;
+}
 void updateWordCount(HWND dialog) {
     std::vector<std::wstring> words;std::wstring error;
     if(!parseEditorWords(windowText(GetDlgItem(dialog,UI_WORDS)),words,error)){SetDlgItemTextW(dialog,UI_WORD_COUNT,error.c_str());return;}
@@ -85,7 +91,7 @@ void refreshSettingsLanguage(HWND dialog) {
     SetWindowTextW(dialog,uiText(L"频道文字朗读 — 选项",L"Channel TTS - Options"));
     for(const auto& label:state->labels)SetWindowTextW(label.control,uiText(label.zh,label.en));
     HWND nav=GetDlgItem(dialog,UI_NAV);SendMessageW(nav,LB_RESETCONTENT,0,0);
-    const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users")};
+    const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users"),uiText(L"在线语音",L"Online speech")};
     for(const auto* title:titles)SendMessageW(nav,LB_ADDSTRING,0,reinterpret_cast<LPARAM>(title));
     SendMessageW(nav,LB_SETCURSEL,state->page,0);updateWordCount(dialog);
     InvalidateRect(GetDlgItem(dialog,UI_HEADER),nullptr,TRUE);state->initializing=false;
@@ -136,6 +142,19 @@ INT_PTR CALLBACK settingsDialogProc(HWND dialog,UINT message,WPARAM wp,LPARAM lp
             add(2,L"LISTBOX",L"",L"",LBS_NOTIFY|WS_VSCROLL|WS_HSCROLL|WS_TABSTOP|WS_BORDER,UI_IGNORED,108,103,314,125);
             SendDlgItemMessageW(dialog,UI_IGNORED,LB_SETHORIZONTALEXTENT,1200,0);
             add(2,L"BUTTON",L"恢复选中用户的朗读",L"Restore selected user's speech",WS_TABSTOP,UI_REMOVE,108,237,220,20);
+            group(3,L"Azure 多语言语音",L"Azure multilingual speech",42,222);
+            add(3,L"BUTTON",L"启用在线多语言朗读",L"Use online multilingual speech",BS_AUTOCHECKBOX|WS_TABSTOP,UI_CLOUD_ENABLE,108,57,314,16);
+            add(3,L"STATIC",L"区域 / Region",L"Region",0,-1,108,81,80,14);
+            add(3,L"EDIT",L"",L"",WS_TABSTOP|ES_AUTOHSCROLL,UI_REGION,192,78,230,18);
+            add(3,L"STATIC",L"声音 / Voice",L"Voice",0,-1,108,108,80,14);
+            add(3,L"EDIT",L"",L"",WS_TABSTOP|ES_AUTOHSCROLL,UI_CLOUD_VOICE,192,105,230,18);
+            add(3,L"STATIC",L"密钥 / Key",L"Key",0,-1,108,135,80,14);
+            add(3,L"EDIT",L"",L"",WS_TABSTOP|ES_AUTOHSCROLL|ES_PASSWORD,UI_CLOUD_KEY,192,132,230,18);
+            SendDlgItemMessageW(dialog,UI_REGION,EM_SETLIMITTEXT,48,0);SendDlgItemMessageW(dialog,UI_CLOUD_VOICE,EM_SETLIMITTEXT,128,0);SendDlgItemMessageW(dialog,UI_CLOUD_KEY,EM_SETLIMITTEXT,256,0);
+            CheckDlgButton(dialog,UI_CLOUD_ENABLE,state->draft.settings.online?BST_CHECKED:BST_UNCHECKED);
+            SetDlgItemTextW(dialog,UI_REGION,state->draft.settings.region.c_str());SetDlgItemTextW(dialog,UI_CLOUD_VOICE,state->draft.settings.cloudVoice.c_str());SetDlgItemTextW(dialog,UI_CLOUD_KEY,state->draft.settings.cloudKey.c_str());
+            add(3,L"STATIC",L"支持中英日等多种语言，依所选声音支持范围自动朗读。需联网及你自己的 Azure Speech 资源；文字发送至微软，可能产生费用。密钥仅加密保存在本机。",L"Reads supported languages including Chinese, English and Japanese. Requires internet and your Azure Speech resource. Text is sent to Microsoft; charges may apply. Key is encrypted for this Windows account.",0,-1,108,162,314,54);
+            add(3,L"BUTTON",L"测试连接并试听",L"Test connection / Preview",WS_TABSTOP,UI_CLOUD_TEST,108,232,220,20);
             add(-1,L"STATIC",L"",L"",0,UI_LANGUAGE_NOTE,98,273,334,19);
             add(-1,L"STATIC",L"",L"",SS_ETCHEDHORZ,-1,6,292,432,1);
             add(-1,L"BUTTON",L"确定",L"OK",WS_TABSTOP|BS_DEFPUSHBUTTON,IDOK,270,300,52,17);
@@ -153,9 +172,9 @@ INT_PTR CALLBACK settingsDialogProc(HWND dialog,UINT message,WPARAM wp,LPARAM lp
         if(message==WM_COMMAND && state){
             int id=LOWORD(wp);
             if(id==UI_NAV && HIWORD(wp)==LBN_SELCHANGE){settingsPage(dialog,static_cast<int>(SendDlgItemMessageW(dialog,UI_NAV,LB_GETCURSEL,0,0)));return TRUE;}
-            if(id>=UI_PAGE && id<UI_PAGE+3){settingsPage(dialog,id-UI_PAGE);return TRUE;}
+            if(id>=UI_PAGE && id<UI_PAGE+4){settingsPage(dialog,id-UI_PAGE);return TRUE;}
             if(id==IDOK || id==UI_APPLY){
-                auto draft=state->draft;if(!readSpeechControls(dialog,draft.settings))return TRUE;std::wstring error;
+                auto draft=state->draft;if(!readCloudControls(dialog,draft.settings))return TRUE;if(!readSpeechControls(dialog,draft.settings))return TRUE;std::wstring error;
                 if(!parseEditorWords(windowText(GetDlgItem(dialog,UI_WORDS)),draft.words,error)){settingsPage(dialog,1);SetDlgItemTextW(dialog,UI_LANGUAGE_NOTE,error.c_str());return TRUE;}
                 auto selection=SendDlgItemMessageW(dialog,UI_LANGUAGE,CB_GETCURSEL,0,0);if(selection<0 || selection>1)return TRUE;draft.english=selection==1;
                 if(commitDraft(draft,error)){
@@ -166,15 +185,16 @@ INT_PTR CALLBACK settingsDialogProc(HWND dialog,UINT message,WPARAM wp,LPARAM lp
             if(id==UI_REMOVE){auto selected=SendDlgItemMessageW(dialog,UI_IGNORED,LB_GETCURSEL,0,0);if(selected!=LB_ERR && static_cast<size_t>(selected)<state->draft.ignored.size()){auto it=state->draft.ignored.begin();std::advance(it,selected);state->draft.ignored.erase(it);fillIgnoredList(dialog);markSettingsDirty(dialog);settingsNotice(dialog,L"已从待应用名单移除，点击确定或应用后恢复朗读。",L"Removed from the draft list. Choose OK or Apply to restore speech.");}return TRUE;}
             if(id==UI_DEFAULTS){fillSpeechControls(dialog,Settings{});markSettingsDirty(dialog);settingsNotice(dialog,L"已填入朗读默认值，应用后生效；词库、名单和语言保留。",L"Speech defaults filled in. Apply to save; words, users and language are retained.");return TRUE;}
             if(id==UI_STOP){std::lock_guard<std::mutex> lock(mu);clearLocked();settingsNotice(dialog,L"已停止当前朗读，后续消息按已保存开关处理。",L"Current speech stopped. New messages follow the saved enable/disable setting.");return TRUE;}
-            if(id==UI_PREVIEW){Settings sample;if(!readSpeechControls(dialog,sample))return TRUE;std::lock_guard<std::mutex> lock(mu);clearLocked();queue.push_back({uiText(L"这是频道文字朗读试听。",L"This is a Channel TTS speech preview."),sample,generation});cv.notify_one();state->previewed=true;settingsNotice(dialog,L"正在试听；没有保存修改。",L"Preview queued; edits have not been saved.");return TRUE;}
+            if(id==UI_PREVIEW || id==UI_CLOUD_TEST){Settings sample;if(!readCloudControls(dialog,sample,id==UI_CLOUD_TEST))return TRUE;if(!readSpeechControls(dialog,sample))return TRUE;std::lock_guard<std::mutex> lock(mu);clearLocked();queue.push_back({sample.online?L"你好。Hello. こんにちは。안녕하세요。":uiText(L"这是频道文字朗读试听。",L"This is a Channel TTS speech preview."),sample,generation,true});cloudStatus.clear();SetTimer(dialog,1,300,nullptr);cv.notify_one();state->previewed=true;settingsNotice(dialog,L"正在试听；没有保存修改。",L"Preview queued; edits have not been saved.");return TRUE;}
             if(id==UI_WORDS && HIWORD(wp)==EN_CHANGE)updateWordCount(dialog);
             if((id==UI_RATE || id==UI_VOLUME) && HIWORD(wp)==EN_CHANGE){BOOL valid=FALSE;int value=static_cast<int>(GetDlgItemInt(dialog,id,&valid,TRUE));if(valid && value>=(id==UI_RATE?-10:0) && value<=(id==UI_RATE?10:100))SendDlgItemMessageW(dialog,id==UI_RATE?UI_RATE_SLIDER:UI_VOLUME_SLIDER,TBM_SETPOS,TRUE,value);}
-            if(!state->initializing && (HIWORD(wp)==EN_CHANGE || (id==UI_LANGUAGE && HIWORD(wp)==CBN_SELCHANGE) || (HIWORD(wp)==BN_CLICKED && (id==UI_ENABLED || id==UI_SELF || id==UI_NAMES || id==UI_FILTER)))){
+            if(!state->initializing && (HIWORD(wp)==EN_CHANGE || (id==UI_LANGUAGE && HIWORD(wp)==CBN_SELCHANGE) || (HIWORD(wp)==BN_CLICKED && (id==UI_ENABLED || id==UI_SELF || id==UI_NAMES || id==UI_FILTER || id==UI_CLOUD_ENABLE)))){
                 markSettingsDirty(dialog);
                 if(id==UI_LANGUAGE)settingsNotice(dialog,L"语言在应用后切换；用户右键菜单重启客户端后刷新。",L"Apply to switch language. Restart TS3 to refresh user menu labels.");
                 else settingsNotice(dialog,L"有尚未应用的修改。确定或应用将保存全部页面。",L"Unapplied changes. OK or Apply saves all pages.");
             }
         }
+        if(message==WM_TIMER && wp==1){std::lock_guard<std::mutex> lock(mu);if(!cloudStatus.empty()){SetDlgItemTextW(dialog,UI_LANGUAGE_NOTE,cloudStatus.c_str());KillTimer(dialog,1);}return TRUE;}
         if(message==WM_CLOSE || (message==WM_COMMAND && LOWORD(wp)==IDCANCEL)){EndDialog(dialog,IDCANCEL);return TRUE;}
         if(message==WM_DESTROY){if(state && state->previewed){std::lock_guard<std::mutex> lock(mu);clearLocked();}delete state;SetWindowLongPtrW(dialog,GWLP_USERDATA,0);settingsDialog=nullptr;return TRUE;}
     }catch(...){settingsNotice(dialog,L"无法应用设置，请重试。",L"Cannot apply settings. Please try again.");}

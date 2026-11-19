@@ -26,8 +26,8 @@ INT_PTR drawSettingsItem(HWND dialog,DRAWITEMSTRUCT* item) {
             HBRUSH brush=CreateSolidBrush(RGB(132+row*77/height,158+row*63/height,188+row*45/height));
             RECT stripe{area.left,area.top+row,area.right,area.top+row+1};FillRect(dc,&stripe,brush);DeleteObject(brush);
         }
-        auto state=settingsState(dialog);const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users")};
-        const wchar_t* subtitles[]={uiText(L"常规选项与语音调节",L"General options and voice adjustment"),uiText(L"频道文字过滤规则",L"Channel text filtering rules"),uiText(L"不朗读指定用户的文字",L"Exclude selected users from speech")};
+        auto state=settingsState(dialog);const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users"),uiText(L"在线语音",L"Online speech")};
+        const wchar_t* subtitles[]={uiText(L"常规选项与语音调节",L"General options and voice adjustment"),uiText(L"频道文字过滤规则",L"Channel text filtering rules"),uiText(L"不朗读指定用户的文字",L"Exclude selected users from speech"),uiText(L"中英日及更多语言",L"Chinese, English, Japanese and more")};
         int page=state?state->page:0;SetTextColor(dc,RGB(31,63,95));
         RECT title{area.left+8,area.top+3,area.right-36,area.bottom};DrawTextW(dc,titles[page],-1,&title,DT_SINGLELINE|DT_NOPREFIX);
         TEXTMETRICW metrics{};GetTextMetricsW(dc,&metrics);title.top+=metrics.tmHeight;DrawTextW(dc,subtitles[page],-1,&title,DT_SINGLELINE|DT_NOPREFIX);
@@ -37,9 +37,9 @@ INT_PTR drawSettingsItem(HWND dialog,DRAWITEMSTRUCT* item) {
         HBRUSH brush=CreateSolidBrush(selected?RGB(204,231,252):RGB(255,255,255));FillRect(dc,&area,brush);DeleteObject(brush);
         if(selected){HBRUSH border=CreateSolidBrush(RGB(96,175,234));FrameRect(dc,&area,border);DeleteObject(border);}
         RECT icon{area.left+1,area.top+1,area.left+33,area.bottom-1};drawSettingsIcon(dc,icon,static_cast<int>(item->itemID));
-        const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users")};
+        const wchar_t* titles[]={uiText(L"朗读设置",L"Speech"),uiText(L"违禁词",L"Word filter"),uiText(L"忽略名单",L"Ignored users"),uiText(L"在线语音",L"Online speech")};
         RECT label{area.left+35,area.top,area.right-2,area.bottom};SetTextColor(dc,GetSysColor(COLOR_WINDOWTEXT));
-        DrawTextW(dc,titles[std::min(item->itemID,2U)],-1,&label,DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX);
+        DrawTextW(dc,titles[std::min(item->itemID,3U)],-1,&label,DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX);
         if(item->itemState&ODS_FOCUS){InflateRect(&area,-2,-2);DrawFocusRect(dc,&area);}
     }
     RestoreDC(dc,saved);return TRUE;

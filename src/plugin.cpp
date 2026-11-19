@@ -1,6 +1,13 @@
 #include <windows.h>
 #include <sapi.h>
 #include <commctrl.h>
+#include <winhttp.h>
+#include <wincrypt.h>
+#include <mmsystem.h>
+#include <chrono>
+#pragma comment(lib,"winhttp.lib")
+#pragma comment(lib,"crypt32.lib")
+#pragma comment(lib,"winmm.lib")
 #pragma comment(lib,"comctl32.lib")
 #include <algorithm>
 #include <atomic>
@@ -26,8 +33,8 @@ TS3Functions ts{};
 std::mutex mu;
 std::condition_variable cv;
 std::thread worker;
-struct Settings { bool enabled=true, self=false, names=true, filter=false; int rate=0, volume=80; } cfg;
-struct Job { std::wstring text; Settings settings; unsigned long long generation; };
+struct Settings { bool enabled=true, self=false, names=true, filter=false; int rate=0, volume=80; bool online=false; std::wstring region=L"eastasia", cloudVoice=L"en-US-EmmaMultilingualNeural", cloudKey; } cfg;
+struct Job { std::wstring text; Settings settings; unsigned long long generation; bool preview=false; };
 std::deque<Job> queue;
 bool quitting=false;
 unsigned long long generation=0;
@@ -76,11 +83,14 @@ void createWordsFile() {
     const char initial[]="\xEF\xBB\xBF# 违禁词库：UTF-8 编码，每行一个词；# 开头为注释。\r\n# 命中正文或正在朗读的昵称时跳过整条语音；英文不区分大小写。\r\n# 修改保存后，点击插件菜单中的“重新加载违禁词库”。\r\n傻逼\r\n操你妈\r\nfuck\r\n";
     DWORD written=0; WriteFile(file,initial,sizeof(initial)-1,&written,nullptr); CloseHandle(file);
 }
+std::wstring cloudStatus;
 void clearLocked() { queue.clear(); ++generation; cv.notify_all(); }
+#include "cloud_config.h"
 void loadLocked() {
     auto get=[](const wchar_t* k,int d){ return static_cast<int>(GetPrivateProfileIntW(L"tts",k,d,ini.c_str())); };
     cfg.enabled=get(L"enabled",1)!=0; cfg.self=get(L"self",0)!=0; cfg.names=get(L"names",1)!=0;
     cfg.filter=get(L"filter",0)!=0;
+    loadCloudSettings(cfg);
     cfg.rate=std::clamp(get(L"rate",0),-10,10); cfg.volume=std::clamp(get(L"volume",80),0,100);
 }
 
@@ -113,6 +123,7 @@ bool saveIgnoredLocked() {
     section.push_back(L'\0');section.push_back(L'\0');
     return WritePrivateProfileSectionW(L"ignored_users",section.c_str(),ini.c_str())!=0;
 }
+#include "cloud_speech.h"
 #include "settings_store.h"
 #include "settings_dialog.h"
 void speech(std::promise<HRESULT> ready) {
@@ -122,12 +133,33 @@ void speech(std::promise<HRESULT> ready) {
     hr=CoCreateInstance(CLSID_SpVoice,nullptr,CLSCTX_INPROC_SERVER,IID_ISpVoice,reinterpret_cast<void**>(&voice));
     ready.set_value(hr);
     if(SUCCEEDED(hr)) {
+        ULONGLONG cloudRetryAfter=0;Settings failedCloud;
         std::unique_lock<std::mutex> lock(mu);
         while(!quitting) {
             cv.wait(lock,[]{return quitting || !queue.empty();});
             if(quitting) break;
             Job job=std::move(queue.front()); queue.pop_front();
             lock.unlock();
+            if(job.settings.online) {
+                if(job.settings.volume==0 || (!job.preview && GetTickCount64()<cloudRetryAfter && job.settings.cloudKey==failedCloud.cloudKey && job.settings.region==failedCloud.region && job.settings.cloudVoice==failedCloud.cloudVoice)){lock.lock();continue;}
+                std::vector<unsigned char> audio;std::wstring error;
+                auto cancelled=[&](){std::lock_guard<std::mutex> guard(mu);return quitting || generation!=job.generation;};
+                bool ok=false;
+                try {ok=fetchCloudAudio(job.settings,job.text,audio,error,cancelled);}catch(...){error=L"Online speech failed.";}
+                lock.lock();
+                if(!quitting && generation==job.generation) {
+                    if(ok)cloudRetryAfter=0;
+                    if(ok && job.settings.volume>0) {
+                        DWORD duration=0;
+                        if(waveDuration(audio,duration) && PlaySoundW(reinterpret_cast<LPCWSTR>(audio.data()),nullptr,SND_MEMORY|SND_ASYNC|SND_NODEFAULT)) {
+                            cloudStatus=englishUI.load()?L"Online speech connected.":L"在线语音连接成功。";
+                            cv.wait_for(lock,std::chrono::milliseconds(duration+100),[&]{return quitting || generation!=job.generation;});
+                            PlaySoundW(nullptr,nullptr,0);
+                        }else cloudStatus=englishUI.load()?L"Invalid audio or playback failed.":L"音频无效或播放失败。";
+                    } else if(!ok) {cloudRetryAfter=GetTickCount64()+30000;failedCloud=job.settings;cloudStatus=error;queue.clear();if(ts.logMessage)ts.logMessage(utf8(error.c_str()).c_str(),LogLevel_WARNING,"Channel TTS",0);}
+                }
+                continue;
+            }
             voice->SetRate(job.settings.rate); voice->SetVolume(static_cast<USHORT>(job.settings.volume));
             hr=voice->Speak(job.text.c_str(),SPF_ASYNC|SPF_IS_NOT_XML,nullptr);
             lock.lock();
@@ -152,7 +184,7 @@ void moved(uint64 s,anyID c) { anyID me=0; if(ts.getClientID(s,&me)==ERROR_ok &&
 void reply(uint64 s,const std::string& text) { ts.printMessage(s,text.c_str(),PLUGIN_MESSAGE_TARGET_SERVER); }
 }
 API const char* ts3plugin_name(){return "频道文字朗读 (Channel TTS)";}
-API const char* ts3plugin_version(){return "1.6.0";}
+API const char* ts3plugin_version(){return "1.7.0";}
 API int ts3plugin_apiVersion(){return 26;}
 API const char* ts3plugin_author(){return "Channel TTS contributors";}
 API const char* ts3plugin_description(){return tr("使用 Windows 系统语音朗读当前频道文字。请在顶部“插件”菜单中的“频道文字朗读”里调整设置。");}

@@ -1,12 +1,26 @@
-# Channel TTS 1.6.0
+# Channel TTS 1.7.0
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A C++17 plugin for **TeamSpeak 3 on Windows x64, Plugin API 26**. It reads text messages from your current channel aloud on your computer using the default Windows desktop SAPI voice.
+A C++17 plugin for **TeamSpeak 3 on Windows x64, Plugin API 26**. It reads text messages from your current channel aloud on your computer using a choice of offline Windows SAPI or online multilingual speech.
 
 [Download the latest release](https://github.com/UltraDATY/ts3-channel-tts/releases/latest) · [All releases](https://github.com/UltraDATY/ts3-channel-tts/releases)
 
-## Interface and workflow in 1.6.0
+## 1.7.0: Online multilingual speech
+
+Open **Settings → Online speech**, enable the online engine, and enter the **region and key of your own Azure Speech resource**. The default voice is `en-US-EmmaMultilingualNeural`. Choose **Test connection / Preview** to try Chinese, English, Japanese and Korean with the unsaved settings, then Apply. The region must match your resource; `eastasia` is only an initial example.
+
+The selected multilingual voice reads supported languages automatically, including Chinese, English and Japanese. Coverage depends on [Microsoft's voice support list](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-synthesis-markup-voice); this is not a promise to support every language. Short or mixed-language text may be misidentified. You may enter another multilingual voice supported in your region. This release uses public Azure Speech endpoints, not sovereign/government/21Vianet endpoints.
+
+- Online speech requires internet and sends text to Microsoft using your own quota; charges may apply. The default remains offline Windows SAPI until you enable online speech.
+- Keys are encrypted with Windows DPAPI for the current Windows user before storage in INI, never stored as plaintext or logged. No shared key is bundled. Do not send keys in chat or publish them to GitHub; re-enter the key after moving configuration to another account/computer.
+- Word filters and ignored users are checked locally before uploading. Rate, volume and queue controls still apply; volume zero skips online requests. Test/Preview is an immediate service request that may be billed; Cancel cannot retract it.
+- Authentication, quota and network errors appear as status/log messages. Failed requests clear queued messages and impose a 30-second cooldown for automatic retries with the same configuration; manual tests can retry immediately. There is no silent fallback to a Chinese voice.
+- Stop/channel/settings changes discard outdated results. An in-flight network operation can wait for its timeout; individual network waits are about 3–4 seconds with a roughly 30-second download budget, so unloading may wait for the current request. Audio is played from memory without saving chat audio files.
+
+Seven local test groups pass, including cloud settings, encrypted persistence, Japanese/SSML escaping, WAV bounds, cancellation and engine switching. **Live Azure synthesis and real TS3 integration have not been verified without your service credentials. Test the connection after entering your settings.** See the [REST API documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech).
+
+## Interface and workflow in 1.7.0
 
 The settings window follows the layout of TeamSpeak 3's Options dialog: a white navigation sidebar with blue-gray icons, a blue-gray gradient header, grouped settings, and **OK / Cancel / Apply** buttons. It uses native Windows controls and an embedded Common Controls v6 manifest. No Qt installation or external image assets are required. Layout uses dialog units and a 9-point font with Chinese support, without changing the host application's DPI settings.
 
@@ -16,7 +30,7 @@ Open **Plugins → 频道文字朗读 (Channel TTS)** for three shortcuts:
 - **朗读：开启 / 关闭 | Speech on/off** immediately toggles speech and saves the choice.
 - **停止朗读 / Stop speech** stops the current speech and clears the queue. New messages still follow the saved enable/disable setting.
 
-The settings window has three pages. Switching pages preserves unapplied edits.
+The settings window has four pages. Switching pages preserves unapplied edits.
 
 | Page | Settings |
 | --- | --- |
@@ -24,7 +38,7 @@ The settings window has three pages. Switching pages preserves unapplied edits.
 | Word filter | Enable filtering, edit one word per line, and view entry counts and limits |
 | Ignored users | View the list and restore speech for selected users; online users on the current server show nicknames, while other users show UIDs |
 
-**OK** validates and saves all three pages, then closes the window. **Apply** saves all pages and keeps the window open; it is disabled until you make a change. Applying a language choice immediately updates the settings window. **Cancel** or closing the window discards unapplied edits; previously applied changes remain saved. Invalid values keep the window open and select the relevant page without discarding your input. Save failures show an error and keep the window open. Ordinary file-lock failures roll back the word-list file and leave the active settings unchanged.
+**OK** validates and saves all four pages, then closes the window. **Apply** saves all pages and keeps the window open; it is disabled until you make a change. Applying a language choice immediately updates the settings window. **Cancel** or closing the window discards unapplied edits; previously applied changes remain saved. Invalid values keep the window open and select the relevant page without discarding your input. Save failures show an error and keep the window open. Ordinary file-lock failures roll back the word-list file and leave the active settings unchanged.
 
 **Preview** immediately plays a sample using the entered rate and volume, clears the old speech queue, and does not save the entered settings. Preview works even when speech is disabled. Closing the settings window stops the preview. **Stop speech** also runs immediately. Cancel cannot undo these immediate actions.
 
@@ -35,12 +49,12 @@ The interface supports **Simplified Chinese and English**, with Chinese selected
 ## Installation and upgrades
 
 1. Use **TeamSpeak 3 for Windows, 64-bit, Plugin API 26**. The official SDK 26 specifies TS3 3.6.0 or later. This plugin does not support TS6, 32-bit clients, Linux, or macOS.
-2. **Exit TS3 completely, including its system-tray process**, then open `ChannelTTS-1.6.0-win64.ts3_plugin` to install it.
-3. If the addon installer fails, extract `ChannelTTS-1.6.0-win64-manual.zip`. Copy `plugins/channel_tts_win64.dll` into `%APPDATA%\TS3Client\plugins`, replacing the old DLL. For portable installations, use the client's actual configuration directory.
-4. Start TS3, enable the plugin in the Addons manager, and confirm that its version is **1.6.0**. Upgrading preserves your settings, word list, and ignored users.
+2. **Exit TS3 completely, including its system-tray process**, then open `ChannelTTS-1.7.0-win64.ts3_plugin` to install it.
+3. If the addon installer fails, extract `ChannelTTS-1.7.0-win64-manual.zip`. Copy `plugins/channel_tts_win64.dll` into `%APPDATA%\TS3Client\plugins`, replacing the old DLL. For portable installations, use the client's actual configuration directory.
+4. Start TS3, enable the plugin in the Addons manager, and confirm that its version is **1.7.0**. Upgrading preserves your settings, word list, and ignored users.
 5. Open Settings and ask another user to send a channel message. To test your own messages, enable **Read my own messages** first.
 
-Speech plays locally through the default Windows output device. It is not injected into your microphone or broadcast to the channel, and it does not automatically follow TS3's output-device selection. Chinese speech requires a compatible desktop SAPI Chinese voice; some Windows OneCore or natural voices are not exposed to desktop SAPI. No cloud service or API key is needed. If speech is silent, check the enable switch, volume, Windows volume mixer, and default output device. Initialization errors appear in the client log.
+Speech plays locally through the default Windows output device. It is not injected into your microphone or broadcast to the channel, and it does not automatically follow TS3's output-device selection. Chinese speech requires a compatible desktop SAPI Chinese voice; some Windows OneCore or natural voices are not exposed to desktop SAPI. Offline mode needs no cloud service or API key; online mode requires your own Azure Speech resource. If speech is silent, check the enable switch, volume, Windows volume mixer, and default output device. Initialization errors appear in the client log.
 
 ## Music bots and ignored users
 
@@ -105,4 +119,4 @@ The queue holds up to 20 pending messages. Message bodies are limited to 500 UTF
 
 Project-owned source code uses the [MIT License](LICENSE). SDK headers remain subject to their applicable terms.
 
-Historical source and installation packages are preserved in [GitHub Releases](https://github.com/UltraDATY/ts3-channel-tts/releases): 1.0.0 initial release, 1.0.1 Chinese UI, 1.1.0 menus, 1.2.0 word filtering, 1.3.0 ignored users, 1.4.0 word-list window, 1.5.0 language switching, and 1.6.0 the unified settings workflow.
+Historical source and installation packages are preserved in [GitHub Releases](https://github.com/UltraDATY/ts3-channel-tts/releases): 1.0.0 initial release, 1.0.1 Chinese UI, 1.1.0 menus, 1.2.0 word filtering, 1.3.0 ignored users, 1.4.0 word-list window, 1.5.0 language switching, 1.6.0 the unified settings workflow, and 1.7.0 online multilingual speech.
